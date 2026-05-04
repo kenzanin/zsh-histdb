@@ -31,6 +31,27 @@ It improves on the normal history by storing, for each history command:
 - A unique per-host session ID, so history from several sessions is not confused
 - The exit status of the command
 
+## Features
+
+### Fuzzy History Search (`histdb-fzf`)
+
+Press **Enter** to insert command, **Ctrl-J** to jump to directory, **Ctrl-D** to delete entry, **Ctrl-R** to cycle through history.
+
+### History Statistics (`histdb-stats`)
+
+View total commands, unique commands, most active hosts/directories, and activity by hour.
+
+### Export & Search
+
+- `histdb-export [format] [output_file]` - Export to text or JSON
+- `histdb-search --date=YYYY-MM-DD --exit=0 --duration=>5 --host=name --dir=/path search_term` - Advanced search
+
+### Integration
+
+- **tmux**: `histdb-fzf-tmux` - Opens fzf in tmux popup
+- **zsh-autosuggestions**: Use `histdb_advanced` strategy for context-aware suggestions
+- **ZLE widgets**: `histdb-top-widget` - browse top commands interactively
+
 ## Installation
 
 You will need `curl`, `jq`, `fzf` and a running `rqlite` cluster.
@@ -119,8 +140,34 @@ HISTDB_TABULATE_CMD=(sed -e $'s/\x1f/\t/g')
 ## Configuration
 
 histdb can be configured exactly as zsh:
-
 - [HISTORY_IGNORE](https://zsh.sourceforge.io/Doc/Release/Parameters.html#index-HISTORY_005fIGNORE): If set, is treated as a single glob pattern to match the commands that should be ignored. Ignored commands are not saved to the database. Example: `(ls|cd|top|htop)`.
+
+### Configuration Examples
+
+**oh-my-zsh**:
+```zsh
+source $ZSH/oh-my-zsh.sh
+source ${0:A:h}/rqlite-history.zsh
+autoload -Uz add-zsh-hook
+bindkey '^R' histdb-fzf
+# Optional: histdb-top widget
+zle -N histdb-top-widget
+bindkey '^[t' histdb-top-widget
+```
+
+**prezto**:
+```zsh
+source $PREZTO/runcoms/zshrc
+source ${0:A:h}/rqlite-history.zsh
+bindkey '^R' histdb-fzf
+```
+
+**Basic zsh**:
+```zsh
+source ~/.local/share/zap/plugins/zsh-histdb/rqlite-history.zsh
+autoload -Uz add-zsh-hook
+bindkey '^R' histdb-fzf
+```
 
 ## Querying history
 
@@ -264,6 +311,57 @@ The database lives in your rqlite cluster.
 You can look in it easily by running `_histdb_query "sql..."`.
 
 For inspiration you can also use `histdb` with the `-d` argument and it will print the SQL it's running.
+
+## Troubleshooting
+
+### rqlite connection issues
+
+If you get connection errors:
+
+1. Check if rqlite is running:
+   ```zsh
+   curl -s http://127.1.1.1:50001/status | jq
+   ```
+
+2. Verify the URL is correct:
+   ```zsh
+   echo $HISTDB_RQLITE_URL
+   ```
+
+3. Check systemd service status:
+   ```zsh
+   systemctl --user status zshdb.service
+   ```
+
+### histdb-fzf not working
+
+1. Make sure fzf is installed:
+   ```zsh
+   which fzf
+   ```
+
+2. Verify the keybinding is set:
+   ```zsh
+   bindkey | grep histdb
+   ```
+
+3. Test the function directly:
+   ```zsh
+   zle -l histdb-fzf
+   ```
+
+### Database issues
+
+1. Check if tables exist:
+   ```zsh
+   _histdb_query "SELECT name FROM sqlite_master WHERE type='table'"
+   ```
+
+2. Reinitialize if needed:
+   ```zsh
+   unset HISTDB_SESSION
+   _histdb_init
+   ```
 
 ## Synchronising history
 
