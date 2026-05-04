@@ -802,3 +802,80 @@ histdb-search() {
     _histdb_query -separator "$sep" "$query" | \
         column -t -s "$sep"
 }
+
+# Phase 4: Integration features
+
+# ZLE widget for histdb-top (browse top commands interactively)
+histdb-top-widget() {
+    _histdb_init
+    local sep=$'\t'
+    local query="SELECT argv, count FROM (
+        SELECT commands.argv as argv, count(*) as count
+        FROM history 
+        JOIN commands ON history.command_id = commands.id 
+        GROUP BY commands.argv
+        ORDER BY count DESC
+        LIMIT 1000
+    )"
+    
+    local selected
+    selected=$(_histdb_query -separator "$sep" "$query" | \
+        fzf --height 60% \
+            --reverse \
+            --tiebreak=index \
+            --delimiter "$sep" \
+            --with-nth 1 \
+            --preview "echo -e 'Command: {1}\nExecuted: {2} times'" \
+            --query "$LBUFFER")
+    
+    if [[ -n "$selected" ]]; then
+        LBUFFER="${selected%%$sep*}"
+    fi
+    zle reset-prompt
+    return 0
+}
+zle -N histdb-top-widget
+
+# fzf-tmux integration (if tmux is running)
+histdb-fzf-tmux() {
+    if [[ -n "$TMUX" ]]; then
+        # Use tmux popup for fzf
+        tmux popup -d '#{pane_current_path}' -w 80% -h 60% -E \
+            "zsh -c 'source ${0:A:h}/rqlite-history.zsh && histdb-fzf'"
+    else
+        histdb-fzf
+    fi
+}
+zle -N histdb-fzf-tmux
+
+# Enhanced zsh-autosuggestions integration
+_zsh_autosuggest_strategy_histdb_advanced() {
+    local query=""
+    local current_dir="$PWD"
+    local search="$1"
+    
+    # First try: exact match in current directory
+    query="SELECT commands.argv FROM history 
+        LEFT JOIN commands ON history.command_id = commands.id
+        LEFT JOIN places ON history.place_id = places.id
+        WHERE commands.argv LIKE '$(sql_escape "$search")%'
+        AND places.dir = '$(sql_escape "$current_dir")'
+        GROUP BY commands.argv 
+        ORDER BY count(*) DESC 
+        LIMIT 1"
+    
+    suggestion=$(_histdb_query "$query")
+    
+    # Fallback: any directory
+    if [[ -z "$suggestion" ]]; then
+        query="SELECT commands.argv FROM history 
+            LEFT JOIN commands ON history.command_id = commands.id
+            WHERE commands.argv LIKE '$(sql_escape "$search")%'
+            GROUP BY commands.argv 
+            ORDER BY count(*) DESC 
+            LIMIT 1"
+        suggestion=$(_histdb_query "$query")
+    fi
+}
+
+# To use: ZSH_AUTOSUGGEST_STRATEGY=histdb_advanced
