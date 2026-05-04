@@ -272,6 +272,10 @@ histdb-fzf() {
 }
 
 zle -N histdb-fzf
+
+histdb-top () {
+    _histdb_init
+    local sep=$'\x1f'
     local field
     local join
     local table
