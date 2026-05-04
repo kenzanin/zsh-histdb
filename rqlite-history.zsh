@@ -232,6 +232,7 @@ histdb-fzf() {
             --delimiter "$sep" \
             --with-nth 1 \
             --preview "echo -e 'Command: {1}\nHost: {2}\nDirectory: {3}\nTime: {4}'" \
+            --bind "ctrl-j:execute(cd {3} && zle reset-prompt)+accept" \
             --preview-window down:4:wrap \
             --query "$LBUFFER")
 
