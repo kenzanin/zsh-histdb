@@ -921,8 +921,9 @@ histdb-import-sqlite() {
 .mode tabs
 .output $temp_file
 SELECT commands.argv, places.host, places.dir, 
-       datetime(history.start_time, 'unixepoch', 'localtime'),
-       history.exit_status, history.duration
+       history.start_time,
+       CASE WHEN history.exit_status IS NULL THEN 0 ELSE history.exit_status END,
+       CASE WHEN history.duration IS NULL THEN 0 ELSE history.duration END
 FROM history 
 JOIN commands ON history.command_id = commands.id 
 JOIN places ON history.place_id = places.id 
@@ -943,11 +944,15 @@ EOSQL
         local cmd_escaped=$(echo "$argv" | sed "s/'/''/g")
         local dir_escaped=$(echo "$dir" | sed "s/'/''/g")
         
+        # Handle NULL/empty values
+        exit_status=${exit_status:-0}
+        duration=${duration:-0}
+        
         _histdb_query "INSERT OR IGNORE INTO commands (argv) VALUES ('$cmd_escaped');"
         _histdb_query "INSERT OR IGNORE INTO places (host, dir) VALUES ('$host', '$dir_escaped');"
         _histdb_query "INSERT INTO history (session, command_id, place_id, start_time, exit_status, duration) 
             SELECT $HISTDB_SESSION, c.id, p.id, 
-                   strftime('%s', '$start_time'), $exit_status, $duration
+                   $start_time, $exit_status, $duration
             FROM commands c, places p 
             WHERE c.argv='$cmd_escaped' AND p.host='$host' AND p.dir='$dir_escaped'
             LIMIT 1;"
