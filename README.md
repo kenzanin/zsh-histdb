@@ -2,6 +2,7 @@
 
 ## News
 
+- **04/05/26**: Added fuzzy history search with `histdb-fzf` function (requires fzf). Supports Enter to select commands and Ctrl-J to jump to the command's directory. Added systemd user service setup for rqlite. Converted README from org to Markdown. Fixed various syntax errors and optimized code.
 - **13/10/21**: Thanks to Aloxaf some subshell invocations have been removed which should make things quicker. Thanks to m42e (again) `histdb-sync` uses the remote database IDs as the canonical ones which should make syncing a bit less thrashy. Thanks to Chad Transtrum we use `builtin which` rather than `which`, for systems which have an unusual which (?!), and an improvement to examples below in the README. Thanks to Klaus Ethgen the invocation of `sqlite3` is now unaffected by some potential confusions in your sqlite rc files.
 - **30/06/20**: Thanks to rolandwalker, add-zsh-hook is used so histdb is a better citizen. Thanks to GreenArchon and phiresky the sqlite helper process is terminated on exit better, and the WAL is truncated before doing histdb sync. This should make things behave a bit better. Thanks to gabreal (and others, I think), some things have been changed to `declare -ga` which helps when using antigen or somesuch? Thanks to sheperdjerred and fuero there is now a file which might make antigen and oh-my-zsh work.
 
