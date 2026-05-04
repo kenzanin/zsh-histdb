@@ -90,16 +90,19 @@ systemctl --user enable --now zshdb.service
 ```
 
 This will:
+
 - Automatically start rqlite on boot (user login)
 - Restart on failure
 - Store data in `~/.local/share/zshdb_data`
 - Listen on `127.1.1.1:50001` (HTTP API) and `127.1.1.1:50002` (raft protocol)
 
-Adjust `HISTDB_RQLITE_URL` in your `~/.zshrc` if you change the default port:
+**Note:** The systemd service and `HISTDB_RQLITE_URL` are independent. If you change the port in the systemd service, you must manually update `HISTDB_RQLITE_URL` in your `~/.zshrc` to match:
 
 ```zsh
 export HISTDB_RQLITE_URL="http://127.1.1.1:50001"
 ```
+
+The default URL is already set to `http://127.1.1.1:50001` in `rqlite-history.zsh`, so you only need to set `HISTDB_RQLITE_URL` if you use a different port or remote server.
 
 ### Note for OS X users
 
@@ -116,6 +119,7 @@ HISTDB_TABULATE_CMD=(sed -e $'s/\x1f/\t/g')
 ## Configuration
 
 histdb can be configured exactly as zsh:
+
 - [HISTORY_IGNORE](https://zsh.sourceforge.io/Doc/Release/Parameters.html#index-HISTORY_005fIGNORE): If set, is treated as a single glob pattern to match the commands that should be ignored. Ignored commands are not saved to the database. Example: `(ls|cd|top|htop)`.
 
 ## Querying history
@@ -131,9 +135,9 @@ To search on particular hosts, directories, sessions, or time periods, see the h
 
 You can also run `histdb-top` to see your most frequent commands, and `histdb-top dir` to show your favourite directory for running commands in, but these commands are really a bit useless.
 
-### Example:
+### Example
 
-```
+```text
 $ histdb strace
 time   ses  dir  cmd
 17/03  438  ~    strace conkeror
@@ -204,6 +208,7 @@ bindkey '^r' _histdb-isearch
 ```
 
 This is like normal `history-reverse-isearch` except:
+
 - The search will start with the buffer contents automatically
 - The editing keys are all standard (because it does not really use the minibuffer).
 
@@ -242,6 +247,7 @@ bindkey '^[r' histdb-fzf  # Use Alt+R instead
 - **Ctrl-C** - Cancel without selecting
 
 The fzf interface shows:
+
 - Command history with preview
 - Host information
 - Directory where command was run
