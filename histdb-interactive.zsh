@@ -61,9 +61,9 @@ places.dir,
 places.host,
 datetime(max(history.start_time), 'unixepoch', 'localtime')
 from history left join commands
-on history.command_id = commands.rowid
+on history.command_id = commands.id
 left join places
-on history.place_id = places.rowid
+on history.place_id = places.id
 where commands.argv glob '*$(sql_escape ${BUFFER})*'
 ${where_host}
 ${where_dir}

@@ -1,73 +1,82 @@
-which sqlite3 >/dev/null 2>&1 || return;
+which curl >/dev/null 2>&1 || return;
+which jq >/dev/null 2>&1 || return;
 
 zmodload zsh/datetime # for EPOCHSECONDS
-zmodload zsh/system # for sysopen
-builtin which sysopen &>/dev/null || return; # guard against zsh older than 5.0.8.
 
-zmodload -F zsh/stat b:zstat # just zstat
 autoload -U add-zsh-hook
 
+typeset -g HISTDB_RQLITE_URL="${HISTDB_RQLITE_URL:-http://127.1.1.1:50001}"
 typeset -g HISTDB_QUERY=""
-if [[ -z ${HISTDB_FILE} ]]; then
-    typeset -g HISTDB_FILE="${HOME}/.histdb/zsh-history.db"
-else
-    typeset -g HISTDB_FILE
-fi
-
-typeset -g HISTDB_FD
-typeset -g HISTDB_INODE=()
 typeset -g HISTDB_SESSION=""
 typeset -g HISTDB_HOST=""
 typeset -g HISTDB_INSTALLED_IN="${(%):-%N}"
-
-
 
 sql_escape () {
     print -r -- ${${@//\'/\'\'}//$'\x00'}
 }
 
 _histdb_query () {
-    sqlite3 -batch -noheader -cmd ".timeout 1000" "${HISTDB_FILE}" "$@"
-    [[ "$?" -ne 0 ]] && echo "error in $@"
+    local url="${HISTDB_RQLITE_URL}"
+    local separator=$'\t'
+    local header=0
+    local sql=""
+    
+    local -a args
+    args=("$@")
+    local i=1
+    while (( i <= $#args )); do
+        case "${args[$i]}" in
+            -separator) separator="${args[$((i+1))]}"; i=$((i+2)) ;;
+            -header) header=1; i=$((i+1)) ;;
+            -noheader) header=0; i=$((i+1)) ;;
+            -batch) i=$((i+1)) ;;
+            -cmd) i=$((i+2)) ;;
+            *) 
+                if [[ "${args[$i]}" != "${HISTDB_FILE}" ]]; then
+                    sql="${args[$i]}"
+                fi
+                i=$((i+1)) 
+                ;;
+        esac
+    done
+
+    if [[ -z "$sql" ]]; then sql=$(cat); fi
+    [[ -z "$sql" ]] && return
+
+    # rqlite endpoint detection
+    local endpoint="query"
+    if [[ $sql =~ "^(?i)(insert|update|delete|create|drop|replace|alter)" ]]; then
+        endpoint="execute"
+    fi
+    if [[ $sql =~ "^(?i)pragma" ]]; then
+        if [[ $sql =~ "=" ]]; then endpoint="execute"; else endpoint="query"; fi
+    fi
+
+    if [[ "$endpoint" == "query" ]]; then
+        local jq_cmd=".results[0] | if .values then .values[] | join(\"$separator\") else empty end"
+        if [[ $header -eq 1 ]]; then
+             jq_cmd=".results[0] | (.columns | join(\"$separator\")), (if .values then .values[] | join(\"$separator\") else empty end)"
+        fi
+        curl -s -G "${url}/db/query?pretty=false" --data-urlencode "q=${sql}" | jq -r "$jq_cmd"
+    else
+        curl -s -X POST "${url}/db/execute?pretty=false" \
+             -H "Content-Type: application/json" \
+             -d "$(printf '%s' "$sql" | jq -R . | jq -s .)" | jq -r '.results[0].rows_affected // 0'
+    fi
 }
 
 _histdb_stop_sqlite_pipe () {
-    if [[ -n $HISTDB_FD ]]; then
-        if print -nu$HISTDB_FD; then
-            exec {HISTDB_FD}>&-;  # https://stackoverflow.com/a/22794374/2639190
-        fi
-    fi
-    # Sometimes, it seems like closing the fd does not terminate the
-    # sqlite batch process, so here is a horrible fallback.
-    # if [[ -n $HISTDB_SQLITE_PID ]]; then
-    #     ps -o args= -p $HISTDB_SQLITE_PID | read -r args
-    #     if [[ $args == "sqlite3 -batch ${HISTDB_FILE}" ]]; then
-    #         kill -TERM $HISTDB_SQLITE_PID
-    #     fi
-    # fi
+    return 0
 }
 
 add-zsh-hook zshexit _histdb_stop_sqlite_pipe
 
 _histdb_start_sqlite_pipe () {
-    local PIPE==(<<<'')
-    setopt local_options no_notify no_monitor
-    mkfifo $PIPE
-    sqlite3 -batch -noheader "${HISTDB_FILE}" < $PIPE >/dev/null &|
-    sysopen -w -o cloexec -u HISTDB_FD -- $PIPE
-    command rm $PIPE
-    zstat -A HISTDB_INODE +inode ${HISTDB_FILE}
+    return 0
 }
 
 _histdb_query_batch () {
-    local CUR_INODE
-    zstat -A CUR_INODE +inode ${HISTDB_FILE}
-    if [[ $CUR_INODE != $HISTDB_INODE ]]; then
-        _histdb_stop_sqlite_pipe
-        _histdb_start_sqlite_pipe
-    fi
-    cat >&$HISTDB_FD
-    echo ';' >&$HISTDB_FD # make sure last command is executed
+    _histdb_query "$(cat)"
 }
 
 _histdb_init () {
@@ -75,11 +84,9 @@ _histdb_init () {
         return
     fi
 
-    if ! [[ -e "${HISTDB_FILE}" ]]; then
-        local hist_dir="${HISTDB_FILE:h}"
-        if ! [[ -d "$hist_dir" ]]; then
-            mkdir -p -- "$hist_dir"
-        fi
+    # Check if tables exist
+    local exists=$(_histdb_query "SELECT name FROM sqlite_master WHERE type='table' AND name='history'")
+    if [[ -z "$exists" ]]; then
         _histdb_query <<-EOF
 create table commands (id integer primary key autoincrement, argv text, unique(argv) on conflict ignore);
 create table places   (id integer primary key autoincrement, host text, dir text, unique(host, dir) on conflict ignore);
@@ -94,21 +101,17 @@ PRAGMA user_version = 2;
 EOF
     fi
     if [[ -z "${HISTDB_SESSION}" ]]; then
-        ${HISTDB_INSTALLED_IN:h}/histdb-migrate "${HISTDB_FILE}"
         HISTDB_HOST=${HISTDB_HOST:-"'$(sql_escape ${HOST})'"}
         HISTDB_SESSION=$(_histdb_query "select 1+max(session) from history inner join places on places.id=history.place_id where places.host = ${HISTDB_HOST}")
         HISTDB_SESSION="${HISTDB_SESSION:-0}"
         readonly HISTDB_SESSION
     fi
 
-    _histdb_start_sqlite_pipe
     _histdb_query_batch >/dev/null <<EOF
 create index if not exists hist_time on history(start_time);
 create index if not exists place_dir on places(dir);
 create index if not exists place_host on places(host);
 create index if not exists history_command_place on history(command_id, place_id);
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous=normal;
 EOF
 }
 
@@ -211,33 +214,7 @@ $sep$sep') as ${1:-cmd} from history left join commands on history.command_id=co
 }
 
 histdb-sync () {
-    _histdb_init
-
-    # this ought to apply to other readers?
-    echo "truncating WAL"
-    echo 'pragma wal_checkpoint(truncate);' | _histdb_query_batch
-    
-    local hist_dir="${HISTDB_FILE:h}"
-    if [[ -d "$hist_dir" ]]; then
-        () {
-            setopt local_options no_pushd_ignore_dups
-
-            pushd -q "$hist_dir"
-            if [[ $(git rev-parse --is-inside-work-tree) != "true" ]] || [[ "$(git rev-parse --show-toplevel)" != "${PWD:A}" ]]; then
-                git init
-                git config merge.histdb.driver "${HISTDB_INSTALLED_IN:h}/histdb-merge %O %A %B"
-                echo "${HISTDB_FILE:t} merge=histdb" >>! .gitattributes
-                git add .gitattributes
-                git add "${HISTDB_FILE:t}"
-            fi
-            _histdb_stop_sqlite_pipe # Stop in case of a merge, starting again afterwards
-            git commit -am "history" && git pull --no-edit && git push
-            _histdb_start_sqlite_pipe
-            popd -q
-        }
-    fi
-
-    echo 'pragma wal_checkpoint(passive);' | _histdb_query_batch
+    echo "rqlite handles synchronization automatically"
 }
 
 histdb () {
@@ -448,23 +425,12 @@ group by history.command_id, history.place_id
 order by max_start ${r_order}
 ${limit:+limit $limit}) order by max_start ${orderdir}"
 
-    ## min max date?
-    local count_query="select count(*) from (select ${cols}
-from
-  commands
-  join history on history.command_id = commands.id
-  join places  on history.place_id = places.id
-where ${where}
-group by history.command_id, history.place_id
-order by max_start desc) order by max_start ${orderdir}"
-
     if [[ $debug = 1 ]]; then
         echo "$query"
     else
-        local count=$(_histdb_query "$count_query")
+        local count=$(_histdb_query "select count(*) from (select ${cols} from commands join history on history.command_id = commands.id join places on history.place_id = places.id where ${where} group by history.command_id, history.place_id)")
         if [[ -p /dev/stdout ]]; then
             buffer() {
-                ## this runs out of memory for big files I think perl -e 'local $/; my $stdin = <STDIN>; print $stdin;'
                 temp=$(mktemp)
                 cat >! "$temp"
                 cat -- "$temp"

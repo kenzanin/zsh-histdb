@@ -19,7 +19,8 @@
 
 * What is this
 
-This is a small bit of zsh code that stores your history into a sqlite3 database.
+This is an experimental version of zsh-histdb that uses rqlite instead of a local SQLite file.
+It stores your history into a distributed rqlite database.
 It improves on the normal history by storing, for each history command:
 
 - The start and stop times of the command
@@ -28,24 +29,31 @@ It improves on the normal history by storing, for each history command:
 - A unique per-host session ID, so history from several sessions is not confused
 - The exit status of the command
 
+* Installation
+
+You will need ~curl~, ~jq~ and a running ~rqlite~ cluster.
+To load and activate history recording you need to source ~rqlite-history.zsh~ (via the plugin).
+
+Default rqlite URL is ~http://localhost:4001~. You can change it by setting ~HISTDB_RQLITE_URL~.
+
 It is also possible to merge multiple history databases together without conflict, so long as all your machines have different hostnames.
 
 * Installation
 
-You will need ~sqlite3~ and the usual coreutils commands installed on your ~PATH~.
-To load and activate history recording you need to source ~sqlite-history.zsh~ from your shell in your zsh startup files.
+You will need ~curl~, ~jq~ and a running ~rqlite~ cluster.
+To load and activate history recording you need to source ~rqlite-history.zsh~ from your shell in your zsh startup files.
 
 Example for installing in ~$HOME/.oh-my-zsh/custom/plugins/zsh-histdb~ (note that ~oh-my-zsh~ is not required):
 
 #+BEGIN_SRC zsh
 mkdir -p $HOME/.oh-my-zsh/custom/plugins/
-git clone https://github.com/larkery/zsh-histdb $HOME/.oh-my-zsh/custom/plugins/zsh-histdb
+git clone -b experimental https://github.com/larkery/zsh-histdb $HOME/.oh-my-zsh/custom/plugins/zsh-histdb
 #+END_SRC
 
 Add this to your ~$HOME/.zshrc~:
 
 #+BEGIN_SRC zsh
-source $HOME/.oh-my-zsh/custom/plugins/zsh-histdb/sqlite-history.zsh
+source $HOME/.oh-my-zsh/custom/plugins/zsh-histdb/rqlite-history.zsh
 autoload -Uz add-zsh-hook
 #+END_SRC
 
