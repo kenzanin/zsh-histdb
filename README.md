@@ -90,13 +90,11 @@ Description=zshdb server (rqlite)
 After=network.target
 
 [Service]
-# Create the data directory if it doesn't exist before starting
+Type=simple
 ExecStartPre=/usr/bin/mkdir -p %h/.local/share/zshdb_data
-
-# Launch the server (adjust path to rqlited if needed)
 ExecStart=%h/.local/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 %h/.local/share/zshdb_data
-
 Restart=on-failure
+RestartSec=5
 WorkingDirectory=%h/.local/share/zshdb_data
 
 [Install]
