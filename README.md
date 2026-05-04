@@ -54,8 +54,50 @@ Add this to your `$HOME/.zshrc`:
 source $HOME/.oh-my-zsh/custom/plugins/zsh-histdb/rqlite-history.zsh
 autoload -Uz add-zsh-hook
 
-# Optional: Bind histdb-fzf to Ctrl+R for fuzzy history search
+ # Optional: Bind histdb-fzf to Ctrl+R for fuzzy history search
 bindkey '^R' histdb-fzf
+```
+
+### Running rqlite as a systemd User Service
+
+Create a systemd user service file at `~/.config/systemd/user/zshdb.service`:
+
+```ini
+[Unit]
+Description=zshdb server (rqlite)
+After=network.target
+
+[Service]
+# Create the data directory if it doesn't exist before starting
+ExecStartPre=/usr/bin/mkdir -p %h/.local/share/zshdb_data
+
+# Launch the server
+ExecStart=%h/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 %h/.local/share/zshdb_data
+
+Restart=on-failure
+WorkingDirectory=%h/.local/share/zshdb_data
+
+[Install]
+WantedBy=default.target
+```
+
+Then enable and start the service:
+
+```zsh
+systemctl --user daemon-reload
+systemctl --user enable --now zshdb.service
+```
+
+This will:
+- Automatically start rqlite on boot (user login)
+- Restart on failure
+- Store data in `~/.local/share/zshdb_data`
+- Listen on `127.1.1.1:50001` (HTTP API) and `127.1.1.1:50002` (raft protocol)
+
+Adjust `HISTDB_RQLITE_URL` in your `~/.zshrc` if you change the default port:
+
+```zsh
+export HISTDB_RQLITE_URL="http://127.1.1.1:50001"
 ```
 
 ### Note for OS X users
