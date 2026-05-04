@@ -210,12 +210,13 @@ histdb-fzf() {
     _histdb_init
 
     local sep=$'\t'
-    local query="SELECT argv, host, dir, time FROM (
+    local query="SELECT argv, host, dir, time, duration FROM (
         SELECT 
             commands.argv as argv, 
             places.host as host, 
             places.dir as dir, 
-            strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time
+            strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time,
+            history.duration as duration
         FROM history 
         JOIN commands ON history.command_id = commands.id 
         JOIN places ON history.place_id = places.id 
@@ -229,9 +230,9 @@ histdb-fzf() {
             --tiebreak=index \
             --delimiter "$sep" \
             --with-nth 1 \
-            --preview "echo -e 'Command: {1}\nHost: {2}\nDirectory: {3}\nTime: {4}'" \
-            --preview-window down:6:wrap \
-            --expect=ctrl-j \
+            --preview "echo -e 'Command: {1}\nHost: {2}\nDirectory: {3}\nTime: {4}\nDuration: {5}s' && which bat >/dev/null 2>&1 && echo '{1}' | bat --plain --language bash --color=always 2>/dev/null || echo ''" \
+            --preview-window down:8:wrap \
+            --expect=ctrl-j,ctrl-r,ctrl-d \
             --query "$LBUFFER")
 
     # Parse output: --expect outputs key pressed first, then selection
@@ -248,23 +249,41 @@ histdb-fzf() {
         # Enter pressed (no expect key)
         selection="${lines[1]}"
     else
-        # Expect key pressed (ctrl-j)
+        # Expect key pressed
         key="${lines[1]}"
         selection="${lines[2]}"
     fi
 
     if [[ -n "$selection" ]]; then
-        if [[ "$key" == "ctrl-j" ]]; then
-            # Extract directory (3rd field) and cd to it
-            local dir=$(echo "$selection" | cut -f3)
-            if [[ -n "$dir" && -d "$dir" ]]; then
-                cd "$dir"
-            fi
-            LBUFFER=""
-        else
-            # Enter - insert command
-            LBUFFER="${selection%%$sep*}"
-        fi
+        case "$key" in
+            "ctrl-j")
+                # Extract directory (3rd field) and cd to it
+                local dir=$(echo "$selection" | cut -f3)
+                if [[ -n "$dir" && -d "$dir" ]]; then
+                    cd "$dir" || return
+                fi
+                LBUFFER=""
+                ;;
+            "ctrl-r")
+                # Cycle through history - re-open fzf with different query
+                LBUFFER="${selection%%$sep*}"
+                histdb-fzf
+                return
+                ;;
+            "ctrl-d")
+                # Delete this history entry
+                local cmd_to_delete=$(echo "$selection" | cut -f1)
+                local dir_to_delete=$(echo "$selection" | cut -f3)
+                if [[ -n "$cmd_to_delete" ]]; then
+                    _histdb_query "DELETE FROM history WHERE id IN (SELECT h.id FROM history h JOIN commands c ON h.command_id = c.id JOIN places p ON h.place_id = p.id WHERE c.argv='$(sql_escape "$cmd_to_delete")' AND p.dir='$(sql_escape "$dir_to_delete")' LIMIT 1)"
+                    zle -M "Deleted: $cmd_to_delete"
+                fi
+                ;;
+            *)
+                # Enter - insert command
+                LBUFFER="${selection%%$sep*}"
+                ;;
+        esac
     fi
     
     zle reset-prompt
