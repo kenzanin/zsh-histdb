@@ -311,18 +311,16 @@ histdb-fzf() {
     _histdb_init
 
     local sep=$'\t'
-    local query="SELECT argv, host, dir, time, duration FROM (
-        SELECT
-            commands.argv as argv,
-            places.host as host,
-            places.dir as dir,
-            strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time,
-            history.duration as duration
-        FROM history
-        JOIN commands ON history.command_id = commands.id
-        JOIN places ON history.place_id = places.id
-        ORDER BY history.start_time DESC
-    ) GROUP BY argv ORDER BY time DESC LIMIT 2000"
+    local query="SELECT DISTINCT commands.argv as argv, 
+        places.host as host, 
+        places.dir as dir, 
+        strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time,
+        history.duration as duration
+    FROM history 
+    JOIN commands ON history.command_id = commands.id 
+    JOIN places ON history.place_id = places.id 
+    ORDER BY history.start_time DESC
+    LIMIT 2000"
 
     local output
     output=$(_histdb_query -separator "$sep" "$query" | \
