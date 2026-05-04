@@ -40,28 +40,49 @@ _histdb_query () {
         esac
     done
 
-    if [[ -z "$sql" ]]; then sql=$(cat); fi
+    if [[ -z "$sql" ]]; then sql="$(cat)"; fi
     [[ -z "$sql" ]] && return
 
     # rqlite endpoint detection
     local endpoint="query"
-    if [[ $sql =~ "^(?i)(insert|update|delete|create|drop|replace|alter)" ]]; then
-        endpoint="execute"
-    fi
-    if [[ $sql =~ "^(?i)pragma" ]]; then
-        if [[ $sql =~ "=" ]]; then endpoint="execute"; else endpoint="query"; fi
-    fi
+    local first_word="${${sql##[[:space:]]##}%%[[:space:]]*}"
+    case "${(L)first_word}" in
+        insert|update|delete|create|drop|replace|alter)
+            endpoint="execute"
+            ;;
+        pragma)
+            if [[ $sql == *"="* ]]; then
+                endpoint="execute"
+            else
+                endpoint="query"
+            fi
+            ;;
+    esac
 
     if [[ "$endpoint" == "query" ]]; then
-        local jq_cmd=".results[0] | if .values then .values[] | join(\"$separator\") else empty end"
-        if [[ $header -eq 1 ]]; then
-             jq_cmd=".results[0] | (.columns | join(\"$separator\")), (if .values then .values[] | join(\"$separator\") else empty end)"
-        fi
-        curl -s -G "${url}/db/query?pretty=false" --data-urlencode "q=${sql}" | jq -r "$jq_cmd"
+        local jq_script='
+            if .results[0].error then 
+                "ERROR: " + .results[0].error 
+            else 
+                .results[0] | 
+                (if $header == "1" then .columns | join($sep) else empty end), 
+                (if .values then .values[] | map(if . == null then "" else . end) | join($sep) else empty end) 
+            end'
+        curl -s -G "${url}/db/query?pretty=false" --data-urlencode "q=${sql}" | jq -r --arg sep "$separator" --arg header "$header" "$jq_script" | while read -r line; do
+            if [[ $line == "ERROR: "* ]]; then
+                echo "error in ${sql}: ${line#ERROR: }" >&2
+            else
+                print -r -- "$line"
+            fi
+        done
     else
         curl -s -X POST "${url}/db/execute?pretty=false" \
              -H "Content-Type: application/json" \
-             -d "$(printf '%s' "$sql" | jq -R . | jq -s .)" | jq -r '.results[0].rows_affected // 0'
+             -d "$(jq -n --arg sql "$sql" '[$sql]')" | jq -r 'if .results[0].error then "ERROR: " + .results[0].error else empty end' | while read -r line; do
+             if [[ $line == "ERROR: "* ]]; then
+                echo "error in ${sql}: ${line#ERROR: }" >&2
+             fi
+        done
     fi
 }
 
