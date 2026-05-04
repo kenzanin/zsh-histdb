@@ -83,6 +83,31 @@ _histdb_query () {
     if [[ -z "$sql" ]]; then sql="$(cat)"; fi
     [[ -z "$sql" ]] && return 0
 
+    # Use rlite C client if available (faster than curl+jq)
+    if [[ -n "$HISTDB_RLITE_BIN" ]]; then
+        _histdb_query_rlite "$sql" "$separator" "$header"
+    else
+        _histdb_query_curl "$sql" "$separator" "$header"
+    fi
+}
+
+_histdb_query_rlite() {
+    local sql="$1"
+    local separator="$2"
+    local header="$3"
+    
+    if [[ "$header" == "1" ]]; then
+        "$HISTDB_RLITE_BIN" "$HISTDB_RQLITE_URL" "$sql" | awk -F'|' 'BEGIN{OFS=FS} NR==1{print; next} {print}' | sed "s/|/$separator/g"
+    else
+        "$HISTDB_RLITE_BIN" "$HISTDB_RQLITE_URL" "$sql" | tail -n +2 | sed "s/|/$separator/g"
+    fi
+}
+
+_histdb_query_curl() {
+    local sql="$1"
+    local separator="$2"
+    local header="$3"
+    
     # rqlite endpoint detection
     local endpoint="query"
     local first_word="${${sql##[[:space:]]##}%%[[:space:]]*}"
@@ -253,20 +278,20 @@ _histdb_batch_insert() {
         # Read from stdin
         entries=("${(@f)$(cat)}")
     fi
-    
+
     local sql="BEGIN TRANSACTION;"
     for entry in "${entries[@]}"; do
         local argv="$(echo "$entry" | cut -d'|' -f1)"
         local dir="$(echo "$entry" | cut -d'|' -f2)"
         local exit_status="$(echo "$entry" | cut -d'|' -f3)"
         local start_time="$(echo "$entry" | cut -d'|' -f4)"
-        
+
         sql="${sql} INSERT OR IGNORE INTO commands (argv) VALUES ('$(sql_escape "$argv")');"
         sql="${sql} INSERT OR IGNORE INTO places (host, dir) VALUES (${HISTDB_HOST}, '$(sql_escape "$dir")');"
         sql="${sql} INSERT INTO history (session, command_id, place_id, exit_status, start_time) SELECT ${HISTDB_SESSION}, c.id, p.id, $exit_status, $start_time FROM commands c, places p WHERE c.argv='$(sql_escape "$argv")' AND p.host=${HISTDB_HOST} AND p.dir='$(sql_escape "$dir")';"
     done
     sql="${sql} COMMIT;"
-    
+
     _histdb_query "$sql"
 }
 
@@ -287,15 +312,15 @@ histdb-fzf() {
 
     local sep=$'\t'
     local query="SELECT argv, host, dir, time, duration FROM (
-        SELECT 
-            commands.argv as argv, 
-            places.host as host, 
-            places.dir as dir, 
+        SELECT
+            commands.argv as argv,
+            places.host as host,
+            places.dir as dir,
             strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time,
             history.duration as duration
-        FROM history 
-        JOIN commands ON history.command_id = commands.id 
-        JOIN places ON history.place_id = places.id 
+        FROM history
+        JOIN commands ON history.command_id = commands.id
+        JOIN places ON history.place_id = places.id
         ORDER BY history.start_time DESC
     ) GROUP BY argv ORDER BY time DESC LIMIT 2000"
 
@@ -320,7 +345,7 @@ histdb-fzf() {
 
     local key=""
     local selection=""
-    
+
     if [[ ${#lines[@]} -eq 1 ]]; then
         # Enter pressed (no expect key)
         selection="${lines[1]}"
@@ -361,7 +386,7 @@ histdb-fzf() {
                 ;;
         esac
     fi
-    
+
     zle reset-prompt
     return 0
 }
@@ -656,30 +681,30 @@ histdb-stats() {
     _histdb_init
     echo "=== History Statistics ==="
     echo ""
-    
+
     # Total commands
     local total=$(_histdb_query "SELECT count(*) FROM history")
     echo "Total history entries: $total"
-    
+
     # Total unique commands
     local unique=$(_histdb_query "SELECT count(DISTINCT command_id) FROM history")
     echo "Unique commands: $unique"
-    
+
     # Most active host
     echo ""
     echo "Most active hosts:"
     _histdb_query -separator $'\t' -header "SELECT places.host, count(*) as count FROM history JOIN places ON history.place_id = places.id GROUP BY places.host ORDER BY count DESC LIMIT 5"
-    
+
     # Most active directories
     echo ""
     echo "Most active directories:"
     _histdb_query -separator $'\t' -header "SELECT places.dir, count(*) as count FROM history JOIN places ON history.place_id = places.id GROUP BY places.dir ORDER BY count DESC LIMIT 5"
-    
+
     # Average command duration
     echo ""
     echo "Average command duration:"
     _histdb_query "SELECT avg(duration) as avg_duration FROM history WHERE duration > 0"
-    
+
     # Most active hours
     echo ""
     echo "Most active hours:"
@@ -693,21 +718,21 @@ histdb-merge() {
         echo "Example: histdb-merge http://remote-host:4001"
         return 1
     fi
-    
+
     _histdb_init
     echo "Merging from $source_url..."
-    
+
     # Export from source
     local temp_file=$(mktemp)
     curl -s -G "${source_url}/db/query?pretty=false" --data-urlencode "q=SELECT argv, host, dir, start_time, exit_status, duration FROM history JOIN commands ON history.command_id = commands.id JOIN places ON history.place_id = places.id LIMIT 10000" | \
         jq -r '.results[0].values[] | @tsv' > "$temp_file" 2>/dev/null
-    
+
     if [[ ! -s "$temp_file" ]]; then
         echo "No data to merge or connection failed"
         rm -f "$temp_file"
         return 1
     fi
-    
+
     echo "Importing $(wc -l < "$temp_file") entries..."
     # Import to local (simplified - would need proper conflict resolution)
     # This is a basic implementation
@@ -719,23 +744,23 @@ histdb-export() {
     local format="${1:-text}"
     local output="${2:-}"
     _histdb_init
-    
-    local query="SELECT datetime(history.start_time, 'unixepoch', 'localtime') as time, 
+
+    local query="SELECT datetime(history.start_time, 'unixepoch', 'localtime') as time,
         places.host, places.dir, commands.argv, history.exit_status, history.duration
-        FROM history 
-        JOIN commands ON history.command_id = commands.id 
-        JOIN places ON history.place_id = places.id 
+        FROM history
+        JOIN commands ON history.command_id = commands.id
+        JOIN places ON history.place_id = places.id
         ORDER BY history.start_time DESC"
-    
+
     case "$format" in
         json)
-            local json_query="SELECT json_object('time', datetime(history.start_time, 'unixepoch', 'localtime'), 
-                'host', places.host, 'dir', places.dir, 
+            local json_query="SELECT json_object('time', datetime(history.start_time, 'unixepoch', 'localtime'),
+                'host', places.host, 'dir', places.dir,
                 'command', commands.argv, 'exit_status', history.exit_status,
                 'duration', history.duration)
-                FROM history 
-                JOIN commands ON history.command_id = commands.id 
-                JOIN places ON history.place_id = places.id 
+                FROM history
+                JOIN commands ON history.command_id = commands.id
+                JOIN places ON history.place_id = places.id
                 ORDER BY history.start_time DESC LIMIT 10000"
             local result=$(_histdb_query "$json_query" | jq -s '.')
             if [[ -n "$output" ]]; then
@@ -757,15 +782,15 @@ histdb-export() {
 histdb-search() {
     _histdb_init
     local sep=$'\t'
-    
-    local query="SELECT argv, host, dir, 
+
+    local query="SELECT argv, host, dir,
         strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time,
         duration, exit_status
-        FROM history 
-        JOIN commands ON history.command_id = commands.id 
-        JOIN places ON history.place_id = places.id 
+        FROM history
+        JOIN commands ON history.command_id = commands.id
+        JOIN places ON history.place_id = places.id
         WHERE 1"
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -796,9 +821,9 @@ histdb-search() {
         esac
         shift
     done
-    
+
     query="${query} ORDER BY history.start_time DESC LIMIT 1000"
-    
+
     _histdb_query -separator "$sep" "$query" | \
         column -t -s "$sep"
 }
@@ -811,13 +836,13 @@ histdb-top-widget() {
     local sep=$'\t'
     local query="SELECT argv, count FROM (
         SELECT commands.argv as argv, count(*) as count
-        FROM history 
-        JOIN commands ON history.command_id = commands.id 
+        FROM history
+        JOIN commands ON history.command_id = commands.id
         GROUP BY commands.argv
         ORDER BY count DESC
         LIMIT 1000
     )"
-    
+
     local selected
     selected=$(_histdb_query -separator "$sep" "$query" | \
         fzf --height 60% \
@@ -827,7 +852,7 @@ histdb-top-widget() {
             --with-nth 1 \
             --preview "echo -e 'Command: {1}\nExecuted: {2} times'" \
             --query "$LBUFFER")
-    
+
     if [[ -n "$selected" ]]; then
         LBUFFER="${selected%%$sep*}"
     fi
@@ -853,26 +878,26 @@ _zsh_autosuggest_strategy_histdb_advanced() {
     local query=""
     local current_dir="$PWD"
     local search="$1"
-    
+
     # First try: exact match in current directory
-    query="SELECT commands.argv FROM history 
+    query="SELECT commands.argv FROM history
         LEFT JOIN commands ON history.command_id = commands.id
         LEFT JOIN places ON history.place_id = places.id
         WHERE commands.argv LIKE '$(sql_escape "$search")%'
         AND places.dir = '$(sql_escape "$current_dir")'
-        GROUP BY commands.argv 
-        ORDER BY count(*) DESC 
+        GROUP BY commands.argv
+        ORDER BY count(*) DESC
         LIMIT 1"
-    
+
     suggestion=$(_histdb_query "$query")
-    
+
     # Fallback: any directory
     if [[ -z "$suggestion" ]]; then
-        query="SELECT commands.argv FROM history 
+        query="SELECT commands.argv FROM history
             LEFT JOIN commands ON history.command_id = commands.id
             WHERE commands.argv LIKE '$(sql_escape "$search")%'
-            GROUP BY commands.argv 
-            ORDER BY count(*) DESC 
+            GROUP BY commands.argv
+            ORDER BY count(*) DESC
             LIMIT 1"
         suggestion=$(_histdb_query "$query")
     fi
