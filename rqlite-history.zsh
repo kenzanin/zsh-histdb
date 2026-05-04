@@ -11,8 +11,8 @@ typeset -g HISTDB_SESSION=""
 typeset -g HISTDB_HOST=""
 typeset -g HISTDB_INSTALLED_IN="${(%):-%N}"
 
-sql_escape () {
-    print -r -- ${${@//\'/\'\'}//$'\x00'}
+sql_escape() {
+    print -r -- "${@//\'/\'\'}"
 }
 
 _histdb_query () {
@@ -41,7 +41,7 @@ _histdb_query () {
     done
 
     if [[ -z "$sql" ]]; then sql="$(cat)"; fi
-    [[ -z "$sql" ]] && return
+    [[ -z "$sql" ]] && return 0
 
     # rqlite endpoint detection
     local endpoint="query"
