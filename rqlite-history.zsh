@@ -902,3 +902,62 @@ _zsh_autosuggest_strategy_histdb_advanced() {
 }
 
 # To use: ZSH_AUTOSUGGEST_STRATEGY=histdb_advanced
+
+# Import SQLite3 database to rqlite
+histdb-import-sqlite() {
+    local sqlite_file="${1:-$HOME/.histdb.db}"
+    if [[ ! -f "$sqlite_file" ]]; then
+        echo "Usage: histdb-import-sqlite <sqlite_db_path>"
+        echo "Default: $HOME/.histdb.db"
+        return 1
+    fi
+    
+    _histdb_init
+    echo "Importing from $sqlite_file..."
+    
+    # Export SQLite data to TSV
+    local temp_file=$(mktemp)
+    sqlite3 "$sqlite_file" <<-EOSQL
+.mode tabs
+.output $temp_file
+SELECT commands.argv, places.host, places.dir, 
+       datetime(history.start_time, 'unixepoch', 'localtime'),
+       history.exit_status, history.duration
+FROM history 
+JOIN commands ON history.command_id = commands.id 
+JOIN places ON history.place_id = places.id 
+LIMIT 10000;
+EOSQL
+    
+    if [[ ! -s "$temp_file" ]]; then
+        echo "No data to import"
+        rm -f "$temp_file"
+        return 1
+    fi
+    
+    echo "Importing $(wc -l < "$temp_file") records..."
+    
+    # Import to rqlite
+    local count=0
+    while IFS=$'\t' read -r argv host dir start_time exit_status duration; do
+        local cmd_escaped=$(echo "$argv" | sed "s/'/''/g")
+        local dir_escaped=$(echo "$dir" | sed "s/'/''/g")
+        
+        _histdb_query "INSERT OR IGNORE INTO commands (argv) VALUES ('$cmd_escaped');"
+        _histdb_query "INSERT OR IGNORE INTO places (host, dir) VALUES ('$host', '$dir_escaped');"
+        _histdb_query "INSERT INTO history (session, command_id, place_id, start_time, exit_status, duration) 
+            SELECT $HISTDB_SESSION, c.id, p.id, 
+                   strftime('%s', '$start_time'), $exit_status, $duration
+            FROM commands c, places p 
+            WHERE c.argv='$cmd_escaped' AND p.host='$host' AND p.dir='$dir_escaped'
+            LIMIT 1;"
+        
+        count=$((count + 1))
+        if (( count % 100 == 0 )); then
+            echo "Imported $count records..."
+        fi
+    done < "$temp_file"
+    
+    rm -f "$temp_file"
+    echo "Import complete: $count records"
+}
