@@ -210,8 +210,6 @@ histdb-fzf() {
     _histdb_init
 
     local sep=$'\t'
-    # Query for unique commands with host and dir for the preview
-    # We use a subquery to get the latest unique commands
     local query="SELECT argv, host, dir, time FROM (
         SELECT 
             commands.argv as argv, 
@@ -239,12 +237,13 @@ histdb-fzf() {
     if [[ -n "$selected" ]]; then
         LBUFFER="${selected%%$sep*}"
     fi
-    if zle; then
-        zle reset-prompt
-    fi
+    
+    zle reset-prompt
+    return 0
 }
 
 zle -N histdb-fzf
+
 
 add-zsh-hook zshaddhistory _histdb_addhistory
 add-zsh-hook precmd _histdb_update_outcome
