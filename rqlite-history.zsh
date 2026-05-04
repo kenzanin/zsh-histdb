@@ -802,8 +802,8 @@ histdb-search() {
                 local exit_code="${1#--exit=}"
                 query="${query} AND history.exit_status = $exit_code"
                 ;;
-            --duration=>*)
-                local dur="${1#--duration=>}"
+            --duration=*)
+                local dur="${1#--duration=}"
                 query="${query} AND history.duration > $dur"
                 ;;
             --host=*)
