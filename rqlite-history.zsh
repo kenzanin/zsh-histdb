@@ -222,20 +222,49 @@ histdb-fzf() {
         ORDER BY history.start_time DESC
     ) GROUP BY argv ORDER BY time DESC LIMIT 2000"
 
-    local selected
-    selected=$(_histdb_query -separator "$sep" "$query" | \
+    local output
+    output=$(_histdb_query -separator "$sep" "$query" | \
         fzf --height 60% \
             --reverse \
             --tiebreak=index \
             --delimiter "$sep" \
             --with-nth 1 \
             --preview "echo -e 'Command: {1}\nHost: {2}\nDirectory: {3}\nTime: {4}'" \
-            --bind "ctrl-j:execute(cd {3})+accept" \
             --preview-window down:6:wrap \
+            --expect=ctrl-j \
             --query "$LBUFFER")
 
-    if [[ -n "$selected" ]]; then
-        LBUFFER="${selected%%$sep*}"
+    # Parse output: --expect outputs key pressed first, then selection
+    local lines=("${(f)output}")
+    if [[ ${#lines[@]} -eq 0 ]]; then
+        zle reset-prompt
+        return 0
+    fi
+
+    local key=""
+    local selection=""
+    
+    if [[ ${#lines[@]} -eq 1 ]]; then
+        # Enter pressed (no expect key)
+        selection="${lines[1]}"
+    else
+        # Expect key pressed (ctrl-j)
+        key="${lines[1]}"
+        selection="${lines[2]}"
+    fi
+
+    if [[ -n "$selection" ]]; then
+        if [[ "$key" == "ctrl-j" ]]; then
+            # Extract directory (3rd field) and cd to it
+            local dir=$(echo "$selection" | cut -f3)
+            if [[ -n "$dir" && -d "$dir" ]]; then
+                cd "$dir"
+            fi
+            LBUFFER=""
+        else
+            # Enter - insert command
+            LBUFFER="${selection%%$sep*}"
+        fi
     fi
     
     zle reset-prompt
@@ -243,14 +272,6 @@ histdb-fzf() {
 }
 
 zle -N histdb-fzf
-
-
-add-zsh-hook zshaddhistory _histdb_addhistory
-add-zsh-hook precmd _histdb_update_outcome
-
-histdb-top () {
-    _histdb_init
-    local sep=$'\x1f'
     local field
     local join
     local table
