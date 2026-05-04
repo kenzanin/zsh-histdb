@@ -226,20 +226,22 @@ histdb-fzf() {
 
     local selected
     selected=$(_histdb_query -separator "$sep" "$query" | \
-        fzf --height 40% \
+        fzf --height 60% \
             --reverse \
             --tiebreak=index \
             --delimiter "$sep" \
             --with-nth 1 \
             --preview "echo -e 'Command: {1}\nHost: {2}\nDirectory: {3}\nTime: {4}'" \
-            --bind "ctrl-j:execute(cd {3} && zle reset-prompt)+accept" \
-            --preview-window down:4:wrap \
+            --bind "ctrl-j:execute(cd {3})+accept" \
+            --preview-window down:6:wrap \
             --query "$LBUFFER")
 
     if [[ -n "$selected" ]]; then
         LBUFFER="${selected%%$sep*}"
     fi
-    zle reset-prompt
+    if zle; then
+        zle reset-prompt
+    fi
 }
 
 zle -N histdb-fzf
