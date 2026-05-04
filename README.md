@@ -93,14 +93,19 @@ After=network.target
 # Create the data directory if it doesn't exist before starting
 ExecStartPre=/usr/bin/mkdir -p %h/.local/share/zshdb_data
 
-# Launch the server
-ExecStart=%h/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 %h/.local/share/zshdb_data
+# Launch the server (adjust path to rqlited if needed)
+ExecStart=%h/.local/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 %h/.local/share/zshdb_data
 
 Restart=on-failure
 WorkingDirectory=%h/.local/share/zshdb_data
 
 [Install]
 WantedBy=default.target
+```
+
+**Note:** Make sure the path to `rqlited` is correct. Check with:
+```zsh
+which rqlited  # e.g., /home/kenzanin/.local/bin/rqlited
 ```
 
 Then enable and start the service:
