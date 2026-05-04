@@ -15,6 +15,46 @@ sql_escape() {
     print -r -- "${@//\'/\'\'}"
 }
 
+# Phase 3: Performance improvements
+
+# Cache for frequent queries (simple in-memory cache)
+typeset -gA HISTDB_CACHE
+typeset -gi HISTDB_CACHE_MAX=100
+
+_histdb_cache_get() {
+    local key="$1"
+    echo "${HISTDB_CACHE[$key]:-}"
+}
+
+_histdb_cache_set() {
+    local key="$1"
+    local value="$2"
+    # Simple LRU: if cache is full, clear it
+    if [[ ${#HISTDB_CACHE[@]} -ge $HISTDB_CACHE_MAX ]]; then
+        HISTDB_CACHE=()
+    fi
+    HISTDB_CACHE[$key]="$value"
+}
+
+# Check for rlite C client (faster than curl+jq)
+typeset -g HISTDB_RLITE_BIN=""
+if which rlite >/dev/null 2>&1; then
+    HISTDB_RLITE_BIN="$(which rlite)"
+fi
+
+# Enhanced query function with caching
+_histdb_query_cached() {
+    local cache_key="$1"
+    local cached=$(_histdb_cache_get "$cache_key")
+    if [[ -n "$cached" ]]; then
+        echo "$cached"
+        return
+    fi
+    local result=$(_histdb_query "$@")
+    _histdb_cache_set "$cache_key" "$result"
+    echo "$result"
+}
+
 _histdb_query () {
     local url="${HISTDB_RQLITE_URL}"
     local separator=$'\t'
@@ -202,6 +242,42 @@ where
 EOF
     fi
     return 0
+}
+
+# Batch insert support
+_histdb_batch_insert() {
+    # Accepts multiple history entries in format: "argv|dir|exit_status|start_time"
+    # More efficient than individual inserts
+    local entries=("$@")
+    if [[ ${#entries[@]} -eq 0 ]]; then
+        # Read from stdin
+        entries=("${(@f)$(cat)}")
+    fi
+    
+    local sql="BEGIN TRANSACTION;"
+    for entry in "${entries[@]}"; do
+        local argv="$(echo "$entry" | cut -d'|' -f1)"
+        local dir="$(echo "$entry" | cut -d'|' -f2)"
+        local exit_status="$(echo "$entry" | cut -d'|' -f3)"
+        local start_time="$(echo "$entry" | cut -d'|' -f4)"
+        
+        sql="${sql} INSERT OR IGNORE INTO commands (argv) VALUES ('$(sql_escape "$argv")');"
+        sql="${sql} INSERT OR IGNORE INTO places (host, dir) VALUES (${HISTDB_HOST}, '$(sql_escape "$dir")');"
+        sql="${sql} INSERT INTO history (session, command_id, place_id, exit_status, start_time) SELECT ${HISTDB_SESSION}, c.id, p.id, $exit_status, $start_time FROM commands c, places p WHERE c.argv='$(sql_escape "$argv")' AND p.host=${HISTDB_HOST} AND p.dir='$(sql_escape "$dir")';"
+    done
+    sql="${sql} COMMIT;"
+    
+    _histdb_query "$sql"
+}
+
+# Use rlite if available (faster than curl+jq)
+_histdb_query_fast() {
+    if [[ -n "$HISTDB_RLITE_BIN" ]]; then
+        local sql="$1"
+        "$HISTDB_RLITE_BIN" "$HISTDB_RQLITE_URL" "$sql"
+    else
+        _histdb_query "$@"
+    fi
 }
 
 histdb-fzf() {
