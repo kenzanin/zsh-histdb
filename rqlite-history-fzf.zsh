@@ -1,7 +1,10 @@
 # fzf-based ZLE widgets
 
 histdb-fzf() {
-    which fzf >/dev/null 2>&1 || { echo "fzf not found"; return 1 }
+    which fzf > /dev/null 2>&1 || {
+        echo "fzf not found"
+        return 1
+    }
     _histdb_init
 
     local sep=$'\t'
@@ -20,16 +23,14 @@ histdb-fzf() {
     LIMIT 2000"
 
     local output
-    output=$(_histdb_query -separator "$sep" "$query" | \
-        fzf --height 60% \
-            --reverse \
-            --no-sort \
+    output=$(_histdb_query -separator "$sep" "$query" |
+        fzf --height 90% \
             --tiebreak=index \
             --delimiter "$sep" \
             --with-nth 1 \
             --preview "echo -e 'Command: {1}\nHost: {2}\nDirectory: {3}\nTime: {4}\nDuration: {5}s' && which bat >/dev/null 2>&1 && echo '{1}' | bat --plain --language bash --color=always 2>/dev/null || echo ''" \
             --preview-window down:8:wrap \
-            --expect=ctrl-j,ctrl-r,ctrl-d \
+            --expect=ctrl-j,ctrl-r,ctrl-x \
             --query "$LBUFFER")
 
     local lines=("${(f)output}")
@@ -50,19 +51,20 @@ histdb-fzf() {
 
     if [[ -n "$selection" ]]; then
         case "$key" in
-            "ctrl-j")
-                local dir=$(echo "$selection" | cut -f3)
-                if [[ -n "$dir" && -d "$dir" ]]; then
-                    cd "$dir" || return
-                fi
-                LBUFFER=""
-                ;;
-            "ctrl-r")
-                LBUFFER="${selection%%$sep*}"
-                histdb-fzf
-                return
-                ;;
-            "ctrl-d")
+        "ctrl-j")
+            local dir=$(echo "$selection" | cut -f3)
+            if [[ -n "$dir" && -d "$dir" ]]; then
+                cd "$dir" || return
+            fi
+            LBUFFER=""
+            ;;
+        "ctrl-r")
+            LBUFFER="${selection%%$sep*}"
+            histdb-fzf
+            return
+            ;;
+            "ctrl-x")
+                # Delete this history entry (X = delete)
                 local cmd_to_delete=$(echo "$selection" | cut -f1)
                 local dir_to_delete=$(echo "$selection" | cut -f3)
                 if [[ -n "$cmd_to_delete" ]]; then
@@ -70,9 +72,9 @@ histdb-fzf() {
                     zle -M "Deleted: $cmd_to_delete"
                 fi
                 ;;
-            *)
-                LBUFFER="${selection%%$sep*}"
-                ;;
+        *)
+            LBUFFER="${selection%%$sep*}"
+            ;;
         esac
     fi
 
@@ -94,7 +96,7 @@ histdb-top-widget() {
     )"
 
     local selected
-    selected=$(_histdb_query -separator "$sep" "$query" | \
+    selected=$(_histdb_query -separator "$sep" "$query" |
         fzf --height 60% \
             --reverse \
             --tiebreak=index \
