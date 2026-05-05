@@ -4,7 +4,9 @@ histdb-top() {
     local field
     local join
     local table
-    1=${1:-cmd}
+    local order="asc"
+    local mode="${1:-cmd}"
+    1=$mode
     case "$1" in
         dir)
             field=places.dir
@@ -17,9 +19,15 @@ histdb-top() {
             table=commands
             ;;
     esac
+    shift
+    for arg in "$@"; do
+        case "$arg" in
+            --desc) order="desc" ;;
+        esac
+    done
     _histdb_query -separator "$sep" -header \
         "select count(*) as count, places.host, replace($field, '
 ', '
-$sep$sep') as ${1:-cmd} from history left join commands on history.command_id=commands.id left join places on history.place_id=places.id group by places.host, $field order by count(*) desc" | \
+$sep$sep') as $mode from history left join commands on history.command_id=commands.id left join places on history.place_id=places.id group by places.host, $field order by count(*) $order" | \
         "${HISTDB_TABULATE_CMD[@]}"
 }
