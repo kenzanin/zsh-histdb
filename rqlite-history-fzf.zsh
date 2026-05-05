@@ -1,7 +1,7 @@
 # fzf-based ZLE widgets
 
 histdb-fzf() {
-    which fzf >/dev/null 2>&1 || {
+    which fzf > /dev/null 2>&1 || {
         echo "fzf not found"
         return 1
     }
@@ -30,7 +30,7 @@ histdb-fzf() {
             --tiebreak=index \
             --delimiter "$sep" \
             --with-nth 1 \
-            --preview "echo -e 'Directory: {3}\nTime: {4}\nDuration: {5}s' && echo '{1}' | bat --language bash --plain --color=always 2>/dev/null || true" \
+            --preview "echo -e 'Directory: {3}\nTime: {4}\nDuration: {5}s' && echo "{1}" | bat --language bash --plain --color=always 2>/dev/null || true" \
             --preview-window down:6:wrap \
             --expect=ctrl-j,ctrl-r,ctrl-k \
             --query "$LBUFFER")
