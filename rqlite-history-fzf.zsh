@@ -1,7 +1,7 @@
 # fzf-based ZLE widgets
 
 histdb-fzf() {
-    which fzf > /dev/null 2>&1 || {
+    which fzf >/dev/null 2>&1 || {
         echo "fzf not found"
         return 1
     }
@@ -25,12 +25,14 @@ histdb-fzf() {
     local output
     output=$(_histdb_query -separator "$sep" "$query" |
         fzf --height 90% \
+            --no-sort \
+            --reverse \
             --tiebreak=index \
             --delimiter "$sep" \
             --with-nth 1 \
-            --preview "echo -e 'Command: {1}\nHost: {2}\nDirectory: {3}\nTime: {4}\nDuration: {5}s' && which bat >/dev/null 2>&1 && echo '{1}' | bat --plain --language bash --color=always 2>/dev/null || echo ''" \
-            --preview-window down:8:wrap \
-            --expect=ctrl-j,ctrl-r,f6 \
+            --preview "echo -e 'Command: {1}\nDirectory: {3}\nTime: {4}\nDuration: {5}s'" \
+            --preview-window down:5:wrap \
+            --expect=ctrl-j,ctrl-r,ctrl-k \
             --query "$LBUFFER")
 
     local lines=("${(f)output}")
@@ -59,21 +61,27 @@ histdb-fzf() {
             LBUFFER=""
             ;;
         "ctrl-r")
-            LBUFFER="${selection%%$sep*}"
+            local cmd="${selection%%$sep*}"
+            cmd="${cmd#\"}"
+            cmd="${cmd%\"}"
+            LBUFFER="$cmd"
             histdb-fzf
             return
             ;;
-            "f6")
-                # Delete this history entry (F6 = delete)
-                local cmd_to_delete=$(echo "$selection" | cut -f1)
-                local dir_to_delete=$(echo "$selection" | cut -f3)
-                if [[ -n "$cmd_to_delete" ]]; then
-                    _histdb_query "DELETE FROM history WHERE id IN (SELECT h.id FROM history h JOIN commands c ON h.command_id = c.id JOIN places p ON h.place_id = p.id WHERE c.argv='$(sql_escape "$cmd_to_delete")' AND p.dir='$(sql_escape "$dir_to_delete")' LIMIT 1)"
-                    zle -M "Deleted: $cmd_to_delete"
-                fi
-                ;;
+        "ctrl-k")
+            # Delete this history entry
+            local cmd_to_delete=$(echo "$selection" | cut -f1)
+            local dir_to_delete=$(echo "$selection" | cut -f3)
+            if [[ -n "$cmd_to_delete" ]]; then
+                _histdb_query "DELETE FROM history WHERE id IN (SELECT h.id FROM history h JOIN commands c ON h.command_id = c.id JOIN places p ON h.place_id = p.id WHERE c.argv='$(sql_escape "$cmd_to_delete")' AND p.dir='$(sql_escape "$dir_to_delete")' LIMIT 1)"
+                zle -M "Deleted: $cmd_to_delete"
+            fi
+            ;;
         *)
-            LBUFFER="${selection%%$sep*}"
+            local cmd="${selection%%$sep*}"
+            cmd="${cmd#\"}"
+            cmd="${cmd%\"}"
+            LBUFFER="$cmd"
             ;;
         esac
     fi
@@ -106,7 +114,10 @@ histdb-top-widget() {
             --query "$LBUFFER")
 
     if [[ -n "$selected" ]]; then
-        LBUFFER="${selected%%$sep*}"
+        local cmd="${selected%%$sep*}"
+        cmd="${cmd#\"}"
+        cmd="${cmd%\"}"
+        LBUFFER="$cmd"
     fi
     zle reset-prompt
     return 0
