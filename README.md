@@ -82,7 +82,7 @@ The plugin re-checks for `rlite` at query time, so you don't need to restart you
 
 ### Fuzzy History Search (`histdb-fzf`)
 
-Press **Enter** to insert command, **Ctrl-J** to jump to directory, **Ctrl-X** to delete entry, **Ctrl-R** to cycle through history.
+Press **Enter** to insert command, **Ctrl-J** to jump to directory, **F6** to delete entry, **Ctrl-R** to cycle through history.
 
 ### History Statistics (`histdb-stats`)
 
@@ -361,7 +361,7 @@ bindkey '^[r' histdb-fzf  # Use Alt+R instead
 
 - **Enter** - Inserts the selected command into the command line
 - **Ctrl-J** - Jumps (cd) to the directory where that command was run
-- **Ctrl-X** - Delete the selected entry from history
+- **F6** - Delete the selected entry from history
 - **Ctrl-C** - Cancel without selecting
 
 The fzf interface shows:
