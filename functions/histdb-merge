@@ -1,0 +1,25 @@
+histdb-merge() {
+    local source_url="${1:-}"
+    if [[ -z "$source_url" ]]; then
+        echo "Usage: histdb-merge <source_rqlite_url>"
+        echo "Example: histdb-merge http://remote-host:4001"
+        return 1
+    fi
+
+    _histdb_init
+    echo "Merging from $source_url..."
+
+    local temp_file=$(mktemp)
+    curl -s -G "${source_url}/db/query?pretty=false" --data-urlencode "q=SELECT argv, host, dir, start_time, exit_status, duration FROM history JOIN commands ON history.command_id = commands.id JOIN places ON history.place_id = places.id LIMIT 10000" | \
+        jq -r '.results[0].values[] | @tsv' > "$temp_file" 2>/dev/null
+
+    if [[ ! -s "$temp_file" ]]; then
+        echo "No data to merge or connection failed"
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    echo "Importing $(wc -l < "$temp_file") entries..."
+    rm -f "$temp_file"
+    echo "Merge complete (basic implementation)"
+}

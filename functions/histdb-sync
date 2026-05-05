@@ -1,0 +1,3 @@
+histdb-sync() {
+    echo "rqlite handles synchronization automatically"
+}

@@ -1,0 +1,200 @@
+histdb () {
+    _histdb_init
+    local -a opts
+    local -a hosts
+    local -a indirs
+    local -a atdirs
+    local -a sessions
+
+    zparseopts -E -D -a opts \
+               -host+::=hosts \
+               -in+::=indirs \
+               -at+::=atdirs \
+               -forget \
+               -yes \
+               -detail \
+               -sep:- \
+               -exact \
+               d h -help \
+               s+::=sessions \
+               -from:- -until:- -limit:- \
+               -status:- -desc
+
+    local usage="usage:$0 terms [--desc] [--host[ x]] [--in[ x]] [--at] [-s n]+* [-d] [--detail] [--forget] [--yes] [--exact] [--sep x] [--from x] [--until x] [--limit n] [--status x]
+    --desc     reverse sort order of results
+    --host     print the host column and show all hosts (otherwise current host)
+    --host x   find entries from host x
+    --in       find only entries run in the current dir or below
+    --in x     find only entries in directory x or below
+    --at       like --in, but excluding subdirectories
+    -s n       only show session n
+    -d         debug output query that will be run
+    --detail   show details
+    --forget   forget everything which matches in the history
+    --yes      don't ask for confirmation when forgetting
+    --exact    don't match substrings
+    --sep x    print with separator x, and don't tabulate
+    --from x   only show commands after date x (sqlite date parser)
+    --until x  only show commands before date x (sqlite date parser)
+    --limit n  only show n rows. defaults to \$LINES or 25
+    --status x only show rows with exit status x. Can be 'error' to find all nonzero."
+
+    local selcols="session as ses, dir"
+    local cols="session, replace(places.dir, '$HOME', '~') as dir"
+    local where="1"
+    if [[ -p /dev/stdout ]]; then
+        local limit=""
+    else
+        local limit="\${\$((LINES - 4)):-25}"
+    fi
+
+    local forget="0"
+    local forget_accept=0
+    local exact=0
+
+    if (( \${#hosts} )); then
+        local hostwhere=""
+        local host=""
+        for host (\$hosts); do
+            host="\${\${host#--host}#=}"
+            hostwhere="\${hostwhere}\${host:+\${hostwhere:+ or }places.host='\$(sql_escape \${host})'}"
+        done
+        where="\${where}\${hostwhere:+ and (\${hostwhere})}"
+        cols="\${cols}, places.host as host"
+        selcols="\${selcols}, host"
+    else
+        where="\${where} and places.host=\${HISTDB_HOST}"
+    fi
+
+    if (( \${#indirs} + \${#atdirs} )); then
+        local dirwhere=""
+        local dir=""
+        for dir (\$indirs); do
+            dir="\${\${\${dir#--in}#=}:-\$PWD}"
+            dirwhere="\${dirwhere}\${dirwhere:+ or }places.dir like '\$(sql_escape \$dir)%'"
+        done
+        for dir (\$atdirs); do
+            dir="\${\${\${dir#--at}#=}:-\$PWD}"
+            dirwhere="\${dirwhere}\${dirwhere:+ or }places.dir = '\$(sql_escape \$dir)'"
+        done
+        where="\${where}\${dirwhere:+ and (\${dirwhere})}"
+    fi
+
+    if (( \${#sessions} )); then
+        local sin=""
+        local ses=""
+        for ses (\$sessions); do
+            ses="\${\${\${ses#-s}#=}:-\${HISTDB_SESSION}}"
+            sin="\${sin}\${sin:+, }\$ses"
+        done
+        where="\${where}\${sin:+ and session in (\$sin)}"
+    fi
+
+    local sep=$'\x1f'
+    local orderdir='asc'
+    local debug=0
+    local opt=""
+    for opt (\$opts); do
+        case \$opt in
+            --desc)
+                orderdir='desc'
+                ;;
+            --sep*)
+                sep=\${opt#--sep}
+                ;;
+            --from*)
+                local from=\${opt#--from}
+                case \$from in
+                    -*) from="datetime('now', '\$from')" ;;
+                    today) from="datetime('now', 'start of day')" ;;
+                    yesterday) from="datetime('now', 'start of day', '-1 day')" ;;
+                esac
+                where="\${where} and datetime(start_time, 'unixepoch') >= \$from"
+                ;;
+            --status*)
+                local xstatus=\${opt#--status}
+                case \$xstatus in
+                    <->) where="\${where} and exit_status = \$xstatus" ;;
+                    error) where="\${where} and exit_status <> 0" ;;
+                esac
+                ;;
+            --until*)
+                local until=\${opt#--until}
+                case \$until in
+                    -*) until="datetime('now', '\$until')" ;;
+                    today) until="datetime('now', 'start of day')" ;;
+                    yesterday) until="datetime('now', 'start of day', '-1 day')" ;;
+                esac
+                where="\${where} and datetime(start_time, 'unixepoch') <= \$until"
+                ;;
+            -d) debug=1 ;;
+            --detail)
+                cols="\${cols}, exit_status, duration "
+                selcols="\${selcols}, exit_status as [?],duration as secs "
+                ;;
+            -h|--help) echo "\$usage"; return 0 ;;
+            --forget) forget=1 ;;
+            --yes) forget_accept=1 ;;
+            --exact) exact=1 ;;
+            --limit*) limit=\${opt#--limit} ;;
+        esac
+    done
+
+    if [[ -n "\$*" ]]; then
+        if (( !exact )); then
+            where="\${where} and commands.argv glob '*\$(sql_escape \$@)*'"
+        else
+            where="\${where} and commands.argv = '\$(sql_escape \$@)'"
+        fi
+    fi
+
+    if (( forget )); then limit=""; fi
+    local seps=\$(echo "\$cols" | tr -c -d ',' | tr ',' \$sep)
+    cols="\${cols}, replace(commands.argv, '
+', '
+\$seps') as argv, max(start_time) as max_start"
+
+    local mst="datetime(max_start, 'unixepoch')"
+    local dst="datetime('now', 'start of day')"
+    local timecol="strftime(case when \$mst > \$dst then '%H:%M' else '%d/%m' end, max_start, 'unixepoch', 'localtime') as time"
+    selcols="\${timecol}, \${selcols}, argv as cmd"
+
+    local r_order="asc"
+    if [[ \$orderdir == "asc" ]]; then r_order="desc"; fi
+
+    local query="select \${selcols} from (select \${cols}
+from commands
+  join history on history.command_id = commands.id
+  join places on history.place_id = places.id
+where \${where}
+group by history.command_id, history.place_id
+order by max_start \${r_order}
+\${limit:+limit \$limit}) order by max_start \${orderdir}"
+
+    if (( debug )); then
+        echo "\$query"
+    else
+        local count=\$(_histdb_query "select count(*) from (select \${cols} from commands join history on history.command_id = commands.id join places on history.place_id = places.id where \${where} group by history.command_id, history.place_id)")
+        if [[ -p /dev/stdout ]]; then
+            buffer() { local t=\$(mktemp); cat >! "\$t"; cat -- "\$t"; rm -f -- "\$t" }
+        else
+            buffer() { cat }
+        fi
+        if [[ \$sep == \$'\x1f' ]]; then
+            _histdb_query -header -separator \$sep "\$query" | iconv -f utf-8 -t utf-8 -c | buffer | "\${HISTDB_TABULATE_CMD[@]}"
+        else
+            _histdb_query -header -separator \$sep "\$query" | buffer
+        fi
+        [[ -n \$limit ]] && [[ \$limit -lt \$count ]] && echo "(showing \$limit of \$count results)"
+    fi
+
+    if (( forget )); then
+        if (( !forget_accept )); then
+            read -q "REPLY?Forget all these results? [y/n] "
+        fi
+        if [[ \$REPLY =~ "[yY]" ]]; then
+            _histdb_query "delete from history where history.id in (select history.id from history left join commands on history.command_id = commands.id left join places on history.place_id = places.id where \${where})"
+            _histdb_query "delete from commands where commands.id not in (select distinct history.command_id from history)"
+        fi
+    fi
+}

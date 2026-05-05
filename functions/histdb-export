@@ -1,0 +1,22 @@
+histdb-export() {
+    local format="${1:-text}"
+    local output="${2:-}"
+    _histdb_init
+
+    local query="SELECT datetime(history.start_time, 'unixepoch', 'localtime') as time, places.host, places.dir, commands.argv, history.exit_status, history.duration FROM history JOIN commands ON history.command_id = commands.id JOIN places ON history.place_id = places.id ORDER BY history.start_time DESC"
+
+    case "$format" in
+        json)
+            local json_query="SELECT json_object('time', datetime(history.start_time, 'unixepoch', 'localtime'), 'host', places.host, 'dir', places.dir, 'command', commands.argv, 'exit_status', history.exit_status, 'duration', history.duration) FROM history JOIN commands ON history.command_id = commands.id JOIN places ON history.place_id = places.id ORDER BY history.start_time DESC LIMIT 10000"
+            local result=$(_histdb_query "$json_query" | jq -s '.')
+            if [[ -n "$output" ]]; then echo "$result" > "$output"
+            else echo "$result"
+            fi
+            ;;
+        text|*)
+            if [[ -n "$output" ]]; then _histdb_query "$query" > "$output"
+            else _histdb_query "$query"
+            fi
+            ;;
+    esac
+}
