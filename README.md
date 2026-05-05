@@ -2,6 +2,8 @@
 
 ## News
 
+- **05/05/26**: Refactored into modular files with zsh lazy autoload. Core (~90 lines) always loaded; tools (`histdb`, `histdb-stats`, etc.) autoloaded on first use for faster shell startup. Added rlite C client support for faster queries.
+
 - **04/05/26**: Added fuzzy history search with `histdb-fzf` function (requires fzf). Supports Enter to select commands and Ctrl-J to jump to the command's directory. Added systemd user service setup for rqlite. Converted README from org to Markdown. Fixed various syntax errors and optimized code.
 - **13/10/21**: Thanks to Aloxaf some subshell invocations have been removed which should make things quicker. Thanks to m42e (again) `histdb-sync` uses the remote database IDs as the canonical ones which should make syncing a bit less thrashy. Thanks to Chad Transtrum we use `builtin which` rather than `which`, for systems which have an unusual which (?!), and an improvement to examples below in the README. Thanks to Klaus Ethgen the invocation of `sqlite3` is now unaffected by some potential confusions in your sqlite rc files.
 - **30/06/20**: Thanks to rolandwalker, add-zsh-hook is used so histdb is a better citizen. Thanks to GreenArchon and phiresky the sqlite helper process is terminated on exit better, and the WAL is truncated before doing histdb sync. This should make things behave a bit better. Thanks to gabreal (and others, I think), some things have been changed to `declare -ga` which helps when using antigen or somesuch? Thanks to sheperdjerred and fuero there is now a file which might make antigen and oh-my-zsh work.
@@ -30,6 +32,51 @@ It improves on the normal history by storing, for each history command:
 - The hostname of the machine
 - A unique per-host session ID, so history from several sessions is not confused
 - The exit status of the command
+
+## Project Structure
+
+```
+zsh-histdb/
+├── rqlite-history.zsh              # Core (always loaded): query, init, hooks, cache
+├── rqlite-history-fzf.zsh          # ZLE widgets: histdb-fzf, histdb-top-widget
+├── rqlite-history-autosuggest.zsh  # zsh-autosuggestions integration
+├── functions/                      # Autoloaded on first use (faster startup)
+│   ├── histdb                     # histdb command with all filters
+│   ├── histdb-top                 # Most frequent commands
+│   ├── histdb-sync                # Sync placeholder
+│   ├── histdb-stats               # Statistics
+│   ├── histdb-export              # Export to text/JSON
+│   ├── histdb-merge               # Merge from another instance
+│   ├── histdb-search              # Advanced search
+│   └── histdb-import-sqlite       # Import SQLite3 db
+└── zsh-histdb.plugin.zsh          # Entry point (source this)
+```
+
+### Zsh Lazy Autoload
+
+Functions in `functions/` are **loaded on first use**, not at shell startup:
+
+```zsh
+# At shell startup: only ~90 lines of core code loaded
+# When you first type `histdb-stats` → zsh loads `functions/histdb-stats` from fpath
+```
+
+This means faster shell startup - you don't pay for features you don't use.
+
+### Zsh Rehash
+
+When you install `rqlite` (or any binary) while zsh is running:
+
+```zsh
+# Without rehash:
+which rqlite    # → not found (cached from PATH)
+
+# Fix:
+rehash          # rebuild command hash table
+which rqlite    # → /home/kenzanin/.local/bin/rqlite
+```
+
+The plugin re-checks for `rlite` at query time, so you don't need to restart your shell after installing it.
 
 ## Features
 
