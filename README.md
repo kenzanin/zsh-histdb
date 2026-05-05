@@ -101,8 +101,12 @@ View total commands, unique commands, most active hosts/directories, and activit
 
 ## Installation
 
-You will need `curl`, `jq`, `fzf` and a running `rqlite` cluster.
-To load and activate history recording you need to source `rqlite-history.zsh` (via the plugin).
+You will need a running `rqlite` cluster. For querying, the plugin supports two methods:
+
+- **Preferred — `rlite` C client** (faster): Install from https://github.com/rqlite/rlite
+- **Fallback — `curl` + `jq`**: Used automatically when `rlite` is not available
+
+Optional: `fzf` for interactive history search.
 
 Default rqlite URL is `http://localhost:4001`. You can change it by setting `HISTDB_RQLITE_URL`.
 

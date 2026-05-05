@@ -1,0 +1,8 @@
+logs/
+tests/_output/
+*.db
+*.db-*
+*.log
+*.tmp
+*.swp
+.DS_Store
