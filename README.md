@@ -140,6 +140,22 @@ HISTDB_TABULATE_CMD=(sed -e $'s/\x1f/\t/g')
 
 [go-histdbimport](https://github.com/drewis/go-histdbimport) and [ts-histdbimport](https://github.com/phiresky/ts-histdbimport) are useful tools for doing this! Note that the imported history will not include metadata such as the working directory or the exit status, since that is not stored in the normal history file format, so queries using `--in DIR`, etc. will not work as expected.
 
+**Import from SQLite3:**
+
+If you have an existing `~/.histdb/zsh-history.db` (or other SQLite database), use the built-in import function:
+
+```zsh
+source /home/kenzanin/.local/share/zap/plugins/zsh-histdb/rqlite-history.zsh
+histdb-import-sqlite ~/.histdb/zsh-history.db
+```
+
+This imports:
+- Commands (argv)
+- Places (host, directory)
+- History entries (with timestamps, exit status, duration)
+
+The import handles NULL values and escapes special characters properly.
+
 ## Configuration
 
 histdb can be configured exactly as zsh:
