@@ -5,16 +5,16 @@ histdb-fzf() {
     _histdb_init
 
     local sep=$'\t'
-    local query="SELECT DISTINCT commands.argv as argv, 
-        places.host as host, 
-        places.dir as dir, 
+    local query="SELECT commands.argv as argv,
+        places.host as host,
+        places.dir as dir,
         strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time,
-        history.duration as duration
-    FROM history 
-    JOIN commands ON history.command_id = commands.id 
-    JOIN places ON history.place_id = places.id 
-    ORDER BY CASE WHEN places.dir LIKE '$(sql_escape $PWD)%' THEN 0 ELSE 1 END,
-        history.start_time DESC
+        history.duration as duration,
+        CASE WHEN places.dir LIKE '$(sql_escape $PWD)%' THEN 0 ELSE 1 END as _sort_dir
+    FROM history
+    JOIN commands ON history.command_id = commands.id
+    JOIN places ON history.place_id = places.id
+    ORDER BY _sort_dir, history.start_time DESC
     LIMIT 2000"
 
     local output
