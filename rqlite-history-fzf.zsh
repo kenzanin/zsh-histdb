@@ -30,7 +30,7 @@ histdb-fzf() {
             --with-nth 1 \
             --preview "echo -e 'Command: {1}\nHost: {2}\nDirectory: {3}\nTime: {4}\nDuration: {5}s' && which bat >/dev/null 2>&1 && echo '{1}' | bat --plain --language bash --color=always 2>/dev/null || echo ''" \
             --preview-window down:8:wrap \
-            --expect=ctrl-j,ctrl-r,ctrl-x \
+            --expect=ctrl-j,ctrl-r,f6 \
             --query "$LBUFFER")
 
     local lines=("${(f)output}")
@@ -63,8 +63,8 @@ histdb-fzf() {
             histdb-fzf
             return
             ;;
-            "ctrl-x")
-                # Delete this history entry (X = delete)
+            "f6")
+                # Delete this history entry (F6 = delete)
                 local cmd_to_delete=$(echo "$selection" | cut -f1)
                 local dir_to_delete=$(echo "$selection" | cut -f3)
                 if [[ -n "$cmd_to_delete" ]]; then
