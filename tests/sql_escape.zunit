@@ -1,0 +1,20 @@
+#!/usr/bin/env zunit
+
+@describe 'sql_escape'
+
+@test 'escapes single quotes' {
+  local input=$'it\'s a test'
+  local result=$(sql_escape $input)
+  assert "$result" contains "it"
+}
+
+@test 'handles strings without quotes' {
+  local result=$(sql_escape helloworld)
+  assert $status equals 0
+  assert "$result" contains "helloworld"
+}
+
+@test 'handles empty string' {
+  local result=$(sql_escape "")
+  assert "$result" is_empty
+}

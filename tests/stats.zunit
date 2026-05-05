@@ -1,0 +1,29 @@
+#!/usr/bin/env zunit
+
+@describe 'histdb-stats'
+
+@test 'returns total history count' {
+  local result
+  result="$(histdb-stats 2>&1)"
+  assert "$status" equals 0
+  assert "$result" contains "Total history entries: 10"
+}
+
+@test 'returns unique command count' {
+  local result
+  result="$(histdb-stats 2>&1)"
+  assert "$result" contains "Unique commands: 10"
+}
+
+@test 'shows most active hosts' {
+  local result
+  result="$(histdb-stats 2>&1)"
+  assert "$result" contains "Most active hosts"
+  assert "$result" contains "testhost"
+}
+
+@test 'shows most active directories' {
+  local result
+  result="$(histdb-stats 2>&1)"
+  assert "$result" contains "Most active directories"
+}

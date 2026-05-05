@@ -1,0 +1,35 @@
+#!/usr/bin/env zunit
+
+@describe 'histdb-search'
+
+@test 'finds commands by search term' {
+  local result
+  result="$(histdb-search "git" 2>&1)"
+  assert "$status" equals 0
+  assert "$result" contains "git status"
+}
+
+@test 'finds commands by exit status' {
+  local result
+  result="$(histdb-search --exit=1 2>&1)"
+  assert "$result" contains "git status"
+}
+
+@test 'finds commands by host' {
+  local result
+  result="$(histdb-search --host=testhost 2>&1)"
+  assert "$status" equals 0
+}
+
+@test 'finds commands by directory' {
+  local result
+  result="$(histdb-search --dir=/home 2>&1)"
+  assert "$status" equals 0
+  assert "$result" contains "ls -la"
+}
+
+@test 'returns nothing for nonexistent search' {
+  local result
+  result="$(histdb-search "xzxxyxz" 2>&1)"
+  assert "$result" is_empty
+}
