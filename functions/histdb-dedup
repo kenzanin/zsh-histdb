@@ -1,0 +1,21 @@
+histdb-dedup() {
+    _histdb_init
+
+    local before=$(_histdb_query "SELECT count(*) FROM history")
+    echo "Entries before: $before"
+
+    [[ "$1" == "--dry-run" ]] && local dry_run=1 || local dry_run=0
+
+    if (( dry_run )); then
+        local dupes=$(_histdb_query "SELECT count(*) FROM history WHERE id NOT IN (SELECT MAX(id) FROM history GROUP BY command_id, place_id)")
+        echo "Duplicates found: $dupes"
+        echo "Run without --dry-run to delete."
+        return 0
+    fi
+
+    _histdb_query "DELETE FROM history WHERE id NOT IN (SELECT MAX(id) FROM history GROUP BY command_id, place_id)"
+
+    local after=$(_histdb_query "SELECT count(*) FROM history")
+    echo "Entries after: $after"
+    echo "Removed $((before - after)) duplicate(s)"
+}
