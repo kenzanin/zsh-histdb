@@ -23,6 +23,7 @@ histdb-fzf() {
     output=$(_histdb_query -separator "$sep" "$query" | \
         fzf --height 60% \
             --reverse \
+            --no-sort \
             --tiebreak=index \
             --delimiter "$sep" \
             --with-nth 1 \
