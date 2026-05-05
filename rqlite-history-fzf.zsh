@@ -13,7 +13,8 @@ histdb-fzf() {
     FROM history 
     JOIN commands ON history.command_id = commands.id 
     JOIN places ON history.place_id = places.id 
-    ORDER BY history.start_time DESC
+    ORDER BY CASE WHEN places.dir LIKE '$(sql_escape $PWD)%' THEN 0 ELSE 1 END,
+        history.start_time DESC
     LIMIT 2000"
 
     local output
