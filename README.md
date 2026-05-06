@@ -18,6 +18,14 @@ It improves on the normal history by storing, for each history command:
 - A unique per-host session ID, so history from several sessions is not confused
 - The exit status of the command
 
+## Motivation
+
+This is a fork of [larkery/zsh-histdb](https://github.com/larkery/zsh-histdb) — the best zsh history plugin out there. The original uses a local SQLite file, which means multi-session sync requires manual git merges, cron jobs, or shared filesystems. That's painful.
+
+I wanted something distributed. Tried rqlite — failed. Then AI agents happened. So I sat down with Opencode and Deepseek/deepseek-v4-flash and just built it. They wrote the code, I drank coffee and pressed Ctrl+R.
+
+This plugin is 90% AI-generated. I'm just the human in the loop with an obsession for good shell history.
+
 ## Project Structure
 
 ```
