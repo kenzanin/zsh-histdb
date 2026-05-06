@@ -2,7 +2,7 @@
 
 ## News
 
-- **05/05/26**: Refactored into modular files with zsh lazy autoload. Core (~90 lines) always loaded; tools (`histdb`, `histdb-stats`, etc.) autoloaded on first use for faster shell startup. Added rlite C client support for faster queries.
+- **06/05/26**: Added `histdb-info` diagnostics, `histdb-dedup` dedup, direct local SQLite reads (3-5x faster), sqlean extensions (regexp, stats, etc.), covering indexes on `start_time`, `--regex` search flag, Ctrl-K delete shortcut. Plugin now bundles 14 SQLite extensions in `extension/`.
 
 - **04/05/26**: Added fuzzy history search with `histdb-fzf` function (requires fzf). Supports Enter to select commands and Ctrl-J to jump to the command's directory. Added systemd user service setup for rqlite. Converted README from org to Markdown. Fixed various syntax errors and optimized code.
 - **13/10/21**: Thanks to Aloxaf some subshell invocations have been removed which should make things quicker. Thanks to m42e (again) `histdb-sync` uses the remote database IDs as the canonical ones which should make syncing a bit less thrashy. Thanks to Chad Transtrum we use `builtin which` rather than `which`, for systems which have an unusual which (?!), and an improvement to examples below in the README. Thanks to Klaus Ethgen the invocation of `sqlite3` is now unaffected by some potential confusions in your sqlite rc files.
@@ -40,15 +40,18 @@ zsh-histdb/
 ├── rqlite-history.zsh              # Core (always loaded): query, init, hooks, cache
 ├── rqlite-history-fzf.zsh          # ZLE widgets: histdb-fzf, histdb-top-widget
 ├── rqlite-history-autosuggest.zsh  # zsh-autosuggestions integration
+├── extension/                      # SQLite extensions (sqlean: regexp, stats, etc.)
 ├── functions/                      # Autoloaded on first use (faster startup)
 │   ├── histdb                     # histdb command with all filters
 │   ├── histdb-top                 # Most frequent commands
 │   ├── histdb-sync                # Sync placeholder
-│   ├── histdb-stats               # Statistics
+│   ├── histdb-stats               # Statistics (median, p95, etc.)
 │   ├── histdb-export              # Export to text/JSON
 │   ├── histdb-merge               # Merge from another instance
-│   ├── histdb-search              # Advanced search
-│   └── histdb-import-sqlite       # Import SQLite3 db
+│   ├── histdb-search              # Advanced search (supports --regex)
+│   ├── histdb-import-sqlite       # Import SQLite3 db
+│   ├── histdb-dedup               # Remove duplicate history entries
+│   └── histdb-info                # System diagnostics & info
 └── zsh-histdb.plugin.zsh          # Entry point (source this)
 ```
 
@@ -84,14 +87,42 @@ The plugin re-checks for `rlite` at query time, so you don't need to restart you
 
 Press **Enter** to insert command, **Ctrl-J** to jump to directory, **Ctrl-K** to delete entry, **Ctrl-R** to cycle through history.
 
+Results are sorted by **current directory first**, then by recency. No duplicates (grouped by argv+dir).
+
+### History Diagnostics (`histdb-info`)
+
+Shows full system status: plugin path, database file/size/records, rqlited version/port/status, installed client tools (curl, jq, sqlite3, fzf, bat), query mode (HTTP vs direct read), loaded SQLite extensions, and environment variables.
+
+```zsh
+histdb-info
+```
+
 ### History Statistics (`histdb-stats`)
 
-View total commands, unique commands, most active hosts/directories, and activity by hour.
+View total commands, unique commands, most active hosts/directories, and duration stats (avg, median, p95, p99).
 
-### Export & Search
+```zsh
+histdb-stats
+```
+
+### Export, Search & Dedup
 
 - `histdb-export [format] [output_file]` - Export to text or JSON
-- `histdb-search --date=YYYY-MM-DD --exit=0 --duration=>5 --host=name --dir=/path search_term` - Advanced search
+- `histdb-search --date=YYYY-MM-DD --exit=0 --duration=5 --host=name --dir=/path term` - Advanced search
+- `histdb-search --regex '^docker\s+(ps|compose)'` - Regex search (requires sqlean extensions)
+- `histdb-dedup` - Remove duplicate history entries (same command+dir)
+- `histdb-dedup --dry-run` - Preview duplicates without deleting
+- `histdb-import-sqlite ~/.histdb/zsh-history.db` - Import from SQLite3 database
+
+### Query Performance
+
+Read queries use **direct local SQLite** (`sqlite3 -readonly`) — 3-5x faster than HTTP:
+
+```
+sqlite3 -readonly ~/.local/share/zshdb_data/db.sqlite "SELECT argv FROM commands LIMIT 10"
+```
+
+Writes (inserts, deletes) still go through rqlite's HTTP API for consistency.
 
 ### Integration
 
