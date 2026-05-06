@@ -24,5 +24,5 @@ histdb-search() {
     done
 
     query="${query} ORDER BY history.start_time DESC LIMIT 1000"
-    _histdb_query -separator "$sep" "$query" | column -t -s "$sep"
+    _histdb_query_local -separator "$sep" "$query" | column -t -s "$sep"
 }

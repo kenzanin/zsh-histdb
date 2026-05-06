@@ -23,7 +23,7 @@ histdb-fzf() {
     LIMIT 2000"
 
     local output
-    output=$(_histdb_query -separator "$sep" "$query" |
+    output=$(_histdb_query_local -separator "$sep" "$query" |
         fzf --height 90% \
             --no-sort \
             --reverse \
@@ -104,7 +104,7 @@ histdb-top-widget() {
     )"
 
     local selected
-    selected=$(_histdb_query -separator "$sep" "$query" |
+    selected=$(_histdb_query_local -separator "$sep" "$query" |
         fzf --height 60% \
             --reverse \
             --tiebreak=index \

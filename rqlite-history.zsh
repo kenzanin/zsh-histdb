@@ -10,6 +10,7 @@ typeset -g HISTDB_QUERY=""
 typeset -g HISTDB_SESSION=""
 typeset -g HISTDB_HOST=""
 typeset -g HISTDB_INSTALLED_IN="${(%):-%N}"
+typeset -g HISTDB_LOCAL_DB="${HISTDB_LOCAL_DB:-$HOME/.local/share/zshdb_data/db.sqlite}"
 
 # Cache
 typeset -gA HISTDB_CACHE
@@ -123,6 +124,37 @@ _histdb_query_curl() {
 _histdb_stop_sqlite_pipe() { return 0 }
 _histdb_start_sqlite_pipe() { return 0 }
 add-zsh-hook zshexit _histdb_stop_sqlite_pipe
+
+# Direct local SQLite read (fast, no HTTP overhead)
+_histdb_query_local() {
+    local separator=$'\t'
+    local header=0
+    local sql=""
+
+    local -a args
+    args=("$@")
+    local i=1
+    while (( i <= $#args )); do
+        case "${args[$i]}" in
+            -separator) separator="${args[$((i+1))]}"; i=$((i+2)) ;;
+            -header) header=1; i=$((i+1)) ;;
+            -noheader) header=0; i=$((i+1)) ;;
+            -batch) i=$((i+1)) ;;
+            -cmd) i=$((i+2)) ;;
+            *) sql="${args[$i]}"; i=$((i+1)) ;;
+        esac
+    done
+
+    [[ -z "$sql" ]] && sql="$(cat)"
+    [[ -z "$sql" ]] && return 0
+    [[ ! -f "$HISTDB_LOCAL_DB" ]] && { _histdb_query "$@"; return }
+
+    if (( header )); then
+        sqlite3 -readonly -header -separator "$separator" "$HISTDB_LOCAL_DB" "$sql" 2>/dev/null
+    else
+        sqlite3 -readonly -separator "$separator" "$HISTDB_LOCAL_DB" "$sql" 2>/dev/null
+    fi
+}
 
 _histdb_query_batch() { _histdb_query "$(cat)" }
 
