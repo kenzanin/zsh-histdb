@@ -44,14 +44,17 @@ histdb-info() {
     echo "  Address: $rqlited_addr"
     local rqlited_port="${rqlited_addr##*:}"
     echo "  Port:    $rqlited_port"
-    local rqlite_status
-    rqlite_status=$(curl -s -G "$HISTDB_RQLITE_URL/status" 2>/dev/null)
-    if [[ -n "$rqlite_status" ]]; then
-        local status_ok=$(echo "$rqlite_status" | jq -r '.ready' 2>/dev/null)
-        echo "  Status:  ${status_ok:-unknown}"
+    local status_file=$(mktemp)
+    if curl -s -G "$HISTDB_RQLITE_URL/status" > "$status_file" 2>/dev/null; then
+        local ready=$(jq -r '.store.ready' "$status_file" 2>/dev/null)
+        local raft_state=$(jq -r '.store.raft.state' "$status_file" 2>/dev/null)
+        echo "  Status:  $raft_state (ready: $ready)"
+        local ro_dsn=$(jq -r '.store.sqlite3.ro_dsn' "$status_file" 2>/dev/null)
+        echo "  RO DSN:  $ro_dsn"
     else
         echo "  Status:  Connection failed"
     fi
+    rm -f "$status_file"
     local systemd_active=$(systemctl --user is-active zshdb.service 2>/dev/null)
     echo "  Systemd: $systemd_active"
     echo ""
@@ -135,4 +138,12 @@ histdb-info() {
     echo "  HISTDB_RQLITE_URL: $HISTDB_RQLITE_URL"
     echo "  HISTDB_SESSION:    ${HISTDB_SESSION:-not initialized}"
     echo "  HISTDB_HOST:       ${HISTDB_HOST:-not set}"
+    echo ""
+
+    # Manual query example
+    echo "Manual queries:"
+    if [[ -f "$HISTDB_LOCAL_DB" ]]; then
+        echo "  sqlite3 -readonly \"$HISTDB_LOCAL_DB\" \"SELECT argv FROM commands LIMIT 5\""
+    fi
+    echo "  curl -s -G \"$HISTDB_RQLITE_URL/db/query\" --data-urlencode 'q=SELECT * FROM commands LIMIT 5' | jq ."
 }
