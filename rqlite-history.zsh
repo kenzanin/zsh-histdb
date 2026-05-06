@@ -1,5 +1,14 @@
-which curl >/dev/null 2>&1 || return
-which jq >/dev/null 2>&1 || return
+# Prefer curlie over curl (modern fork, better JSON handling)
+typeset -g HISTDB_CURL_BIN=""
+if which curlie >/dev/null 2>&1; then
+    HISTDB_CURL_BIN="curlie"
+elif which curl >/dev/null 2>&1; then
+    HISTDB_CURL_BIN="curl"
+else
+    return
+fi
+typeset -g HISTDB_JQ_BIN=""
+which jq >/dev/null 2>&1 && HISTDB_JQ_BIN="jq" || return
 
 zmodload zsh/datetime
 
@@ -96,8 +105,8 @@ _histdb_query_curl() {
     esac
 
     if [[ "$endpoint" == "query" ]]; then
-        curl -s -G "${HISTDB_RQLITE_URL}/db/query?pretty=false" --data-urlencode "q=${sql}" | \
-            jq -r --arg sep "$separator" --arg header "$header" '
+        $HISTDB_CURL_BIN -s -G "${HISTDB_RQLITE_URL}/db/query?pretty=false" --data-urlencode "q=${sql}" | \
+            "$HISTDB_JQ_BIN" -r --arg sep "$separator" --arg header "$header" '
                 if .results[0].error then "ERROR: " + .results[0].error
                 else .results[0] |
                     (if $header == "1" then .columns | join($sep) else empty end),
@@ -110,10 +119,10 @@ _histdb_query_curl() {
             fi
         done
     else
-        curl -s -X POST "${HISTDB_RQLITE_URL}/db/execute?pretty=false" \
+        $HISTDB_CURL_BIN -s -X POST "${HISTDB_RQLITE_URL}/db/execute?pretty=false" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n --arg sql "$sql" '[$sql]')" | \
-            jq -r 'if .results[0].error then "ERROR: " + .results[0].error else empty end' | while read -r line; do
+            -d "$("$HISTDB_JQ_BIN" -n --arg sql "$sql" '[$sql]')" | \
+            "$HISTDB_JQ_BIN" -r 'if .results[0].error then "ERROR: " + .results[0].error else empty end' | while read -r line; do
             if [[ $line == "ERROR: "* ]]; then
                 echo "error in ${sql}: ${line#ERROR: }" >&2
             fi

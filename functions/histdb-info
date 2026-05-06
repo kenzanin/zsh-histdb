@@ -45,7 +45,7 @@ histdb-info() {
     local rqlited_port="${rqlited_addr##*:}"
     echo "  Port:    $rqlited_port"
     local status_file=$(mktemp)
-    if curl -s -G "$HISTDB_RQLITE_URL/status" > "$status_file" 2>/dev/null; then
+    if $HISTDB_CURL_BIN -s -G "$HISTDB_RQLITE_URL/status" > "$status_file" 2>/dev/null; then
         local ready=$(jq -r '.store.ready' "$status_file" 2>/dev/null)
         local raft_state=$(jq -r '.store.raft.state' "$status_file" 2>/dev/null)
         echo "  Status:  $raft_state (ready: $ready)"
@@ -61,13 +61,13 @@ histdb-info() {
 
     # Client tools
     echo "Client tools:"
-    if which curl >/dev/null 2>&1; then
-        echo "  curl:    $(curl --version 2>&1 | head -1 | awk '{print $2}')"
+    if [[ -n "$HISTDB_CURL_BIN" ]]; then
+        echo "  $HISTDB_CURL_BIN:    $($HISTDB_CURL_BIN --version 2>&1 | head -1 | awk '{print $2}')"
     else
-        echo "  curl:    Not installed"
+        echo "  curlie/curl:    Not installed"
     fi
-    if which jq >/dev/null 2>&1; then
-        echo "  jq:      $(jq --version 2>&1)"
+    if [[ -n "$HISTDB_JQ_BIN" ]]; then
+        echo "  jq:      $("$HISTDB_JQ_BIN" --version 2>&1)"
     else
         echo "  jq:      Not installed"
     fi
@@ -102,7 +102,7 @@ histdb-info() {
     if [[ -n "$HISTDB_RLITE_BIN" ]]; then
         echo "  Active:  rlite C client (fast)"
     else
-        echo "  Active:  curl + jq (HTTP)"
+        echo "  Active:  $HISTDB_CURL_BIN + $HISTDB_JQ_BIN (HTTP)"
     fi
     if [[ -f "$HISTDB_LOCAL_DB" ]]; then
         echo "  Local:   sqlite3 -readonly (fastest, for reads)"
@@ -145,5 +145,5 @@ histdb-info() {
     if [[ -f "$HISTDB_LOCAL_DB" ]]; then
         echo "  sqlite3 -readonly \"$HISTDB_LOCAL_DB\" \"SELECT argv FROM commands LIMIT 5\""
     fi
-    echo "  curl -s -G \"$HISTDB_RQLITE_URL/db/query\" --data-urlencode 'q=SELECT * FROM commands LIMIT 5' | jq ."
+    echo "  $HISTDB_CURL_BIN -s -G \"$HISTDB_RQLITE_URL/db/query\" --data-urlencode 'q=SELECT * FROM commands LIMIT 5' | $HISTDB_JQ_BIN ."
 }
