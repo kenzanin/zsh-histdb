@@ -108,7 +108,7 @@ histdb-info() {
 
     # SQLite extensions
     echo "SQLite extensions:"
-    local ext_dir="$HOME/.local/share/zshdb_extensions"
+    local ext_dir="${plugin_dir}/extension"
     if [[ -d "$ext_dir" ]]; then
         echo "  Dir:    $ext_dir"
         local count=$(ls "$ext_dir"/*.so 2>/dev/null | wc -l)

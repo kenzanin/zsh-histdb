@@ -143,7 +143,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStartPre=/usr/bin/mkdir -p %h/.local/share/zshdb_data
-ExecStart=%h/.local/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 -extensions-path=%h/.local/share/zshdb_extensions %h/.local/share/zshdb_data
+ExecStart=%h/.local/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 -extensions-path=%h/.local/share/zap/plugins/zsh-histdb/extension %h/.local/share/zshdb_data
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=%h/.local/share/zshdb_data
@@ -388,10 +388,9 @@ rqlite supports loading SQLite extensions via the `-extensions-path` flag. Prebu
 | **text** | String functions | Import/export |
 | **uuid** | Unique ID generation | Session management |
 
-To install:
+To install (included in plugin):
 ```zsh
-curl -sL "https://github.com/nalgeon/sqlean/releases/latest/download/sqlean-linux-x64.zip" -o /tmp/sqlean.zip
-unzip -q /tmp/sqlean.zip -d ~/.local/share/zshdb_extensions
+# Extensions are already in <plugin-dir>/extension/
 systemctl --user restart zshdb.service
 ```
 
