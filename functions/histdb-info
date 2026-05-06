@@ -1,0 +1,138 @@
+histdb-info() {
+    local sep=$'\t'
+    echo "=== zsh-histdb Info ==="
+    echo ""
+
+    # Plugin location
+    echo "Plugin:"
+    echo "  Source: ${HISTDB_INSTALLED_IN:-unknown}"
+    local plugin_dir="${${HISTDB_INSTALLED_IN:A}:h}"
+    echo "  Dir:    $plugin_dir"
+    echo ""
+
+    # Database
+    echo "Database:"
+    echo "  Name:   rqlite (SQLite-based)"
+    if [[ -f "$HISTDB_LOCAL_DB" ]]; then
+        local db_size=$(stat -c%s "$HISTDB_LOCAL_DB" 2>/dev/null)
+        echo "  File:   $HISTDB_LOCAL_DB"
+        echo "  Size:   $(( db_size / 1024 )) KB"
+        local total=$(_histdb_query_local "SELECT count(*) FROM history" 2>/dev/null)
+        local unique=$(_histdb_query_local "SELECT count(DISTINCT command_id) FROM history" 2>/dev/null)
+        echo "  Records: $total history entries, $unique unique commands"
+    else
+        echo "  File:   Not found ($HISTDB_LOCAL_DB)"
+        echo "  Status: rqlite not started or wrong path"
+    fi
+    echo ""
+
+    # rqlited (server)
+    echo "rqlited (server):"
+    local rqlited_path
+    rqlited_path=$(which rqlited 2>/dev/null)
+    if [[ -n "$rqlited_path" ]]; then
+        local rqlited_ver
+        rqlited_ver=$("$rqlited_path" --version 2>&1 | head -3)
+        echo "  Binary: $rqlited_path"
+        echo "  Version:"
+        echo "$rqlited_ver" | sed 's/^/    /'
+    else
+        echo "  Binary: Not found in PATH"
+    fi
+    local rqlited_addr="${HISTDB_RQLITE_URL#http://}"
+    rqlited_addr="${rqlited_addr%/}"
+    echo "  Address: $rqlited_addr"
+    local rqlited_port="${rqlited_addr##*:}"
+    echo "  Port:    $rqlited_port"
+    local rqlite_status
+    rqlite_status=$(curl -s -G "$HISTDB_RQLITE_URL/status" 2>/dev/null)
+    if [[ -n "$rqlite_status" ]]; then
+        local status_ok=$(echo "$rqlite_status" | jq -r '.ready' 2>/dev/null)
+        echo "  Status:  ${status_ok:-unknown}"
+    else
+        echo "  Status:  Connection failed"
+    fi
+    local systemd_active=$(systemctl --user is-active zshdb.service 2>/dev/null)
+    echo "  Systemd: $systemd_active"
+    echo ""
+
+    # Client tools
+    echo "Client tools:"
+    if which curl >/dev/null 2>&1; then
+        echo "  curl:    $(curl --version 2>&1 | head -1 | awk '{print $2}')"
+    else
+        echo "  curl:    Not installed"
+    fi
+    if which jq >/dev/null 2>&1; then
+        echo "  jq:      $(jq --version 2>&1)"
+    else
+        echo "  jq:      Not installed"
+    fi
+    if which sqlite3 >/dev/null 2>&1; then
+        echo "  sqlite3: $(sqlite3 --version 2>&1)"
+    else
+        echo "  sqlite3: Not installed"
+    fi
+    local rqlite_path
+    rqlite_path=$(which ~/bin/rqlite 2>/dev/null)
+    if [[ -n "$rqlite_path" ]]; then
+        local rqlite_ver=$("$rqlite_path" --version 2>&1 | grep -oP 'rqlite version [\d.]+' | head -1)
+        echo "  rqlite:  $rqlite_path"
+        echo "           ${rqlite_ver:-interactive CLI}"
+    else
+        echo "  rqlite:  Not found (interactive CLI)"
+    fi
+    if which fzf >/dev/null 2>&1; then
+        echo "  fzf:     $(fzf --version 2>&1)"
+    else
+        echo "  fzf:     Not installed (histdb-fzf won't work)"
+    fi
+    if which bat >/dev/null 2>&1; then
+        echo "  bat:     $(bat --version 2>&1)"
+    else
+        echo "  bat:     Not installed (preview without highlighting)"
+    fi
+    echo ""
+
+    # Query mode
+    echo "Query mode:"
+    if [[ -n "$HISTDB_RLITE_BIN" ]]; then
+        echo "  Active:  rlite C client (fast)"
+    else
+        echo "  Active:  curl + jq (HTTP)"
+    fi
+    if [[ -f "$HISTDB_LOCAL_DB" ]]; then
+        echo "  Local:   sqlite3 -readonly (fastest, for reads)"
+    fi
+    echo ""
+
+    # SQLite extensions
+    echo "SQLite extensions:"
+    local ext_dir="$HOME/.local/share/zshdb_extensions"
+    if [[ -d "$ext_dir" ]]; then
+        echo "  Dir:    $ext_dir"
+        local count=$(ls "$ext_dir"/*.so 2>/dev/null | wc -l)
+        echo "  Loaded: $count extension(s)"
+        for ext in "$ext_dir"/*.so; do
+            local ext_name="${ext##*/}"
+            ext_name="${ext_name%.so}"
+            echo "    - $ext_name"
+        done
+    else
+        echo "  Dir:    Not found ($ext_dir)"
+    fi
+    # Test regexp extension
+    if [[ -f "$HISTDB_LOCAL_DB" ]]; then
+        local regexp_ok=$(sqlite3 -readonly "$HISTDB_LOCAL_DB" "SELECT regexp('test', 'test')" 2>/dev/null)
+        if [[ "$regexp_ok" == "1" ]]; then
+            echo "  Status:  Working (regexp verified)"
+        fi
+    fi
+    echo ""
+
+    # Environment
+    echo "Environment:"
+    echo "  HISTDB_RQLITE_URL: $HISTDB_RQLITE_URL"
+    echo "  HISTDB_SESSION:    ${HISTDB_SESSION:-not initialized}"
+    echo "  HISTDB_HOST:       ${HISTDB_HOST:-not set}"
+}

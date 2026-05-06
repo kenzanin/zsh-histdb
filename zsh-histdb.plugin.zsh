@@ -11,4 +11,4 @@ source "${0:A:h}/rqlite-history-autosuggest.zsh"
 
 # Autoloaded functions: loaded on first use (not at shell startup)
 fpath+=( "${0:A:h}/functions" )
-autoload -Uz histdb histdb-top histdb-sync histdb-stats histdb-export histdb-merge histdb-search histdb-import-sqlite histdb-dedup
+autoload -Uz histdb histdb-top histdb-sync histdb-stats histdb-export histdb-merge histdb-search histdb-import-sqlite histdb-dedup histdb-info
