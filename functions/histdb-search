@@ -1,6 +1,7 @@
 histdb-search() {
     _histdb_init
     local sep=$'\t'
+    local use_regex=0
     local query="SELECT argv, host, dir, strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time, duration, exit_status FROM history JOIN commands ON history.command_id = commands.id JOIN places ON history.place_id = places.id WHERE 1"
 
     while [[ $# -gt 0 ]]; do
@@ -10,7 +11,14 @@ histdb-search() {
             --duration=*) local d="${1#--duration=}"; query="${query} AND history.duration > $d" ;;
             --host=*) local h="${1#--host=}"; query="${query} AND places.host = '$h'" ;;
             --dir=*) local d="${1#--dir=}"; query="${query} AND places.dir LIKE '$d%'" ;;
-            *) query="${query} AND commands.argv LIKE '%${1}%'" ;;
+            --regex) use_regex=1 ;;
+            *)
+                if (( use_regex )); then
+                    query="${query} AND commands.argv REGEXP '${1}'"
+                else
+                    query="${query} AND commands.argv LIKE '%${1}%'"
+                fi
+                ;;
         esac
         shift
     done

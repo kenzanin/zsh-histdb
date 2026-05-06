@@ -143,7 +143,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStartPre=/usr/bin/mkdir -p %h/.local/share/zshdb_data
-ExecStart=%h/.local/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 %h/.local/share/zshdb_data
+ExecStart=%h/.local/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 -extensions-path=%h/.local/share/zshdb_extensions %h/.local/share/zshdb_data
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=%h/.local/share/zshdb_data
@@ -375,6 +375,34 @@ The fzf interface shows:
 
 - `fzf` must be installed and available in your PATH
 - Works as a ZLE widget (must be bound to a key, cannot be run as a command)
+
+## SQLite Extensions
+
+rqlite supports loading SQLite extensions via the `-extensions-path` flag. Prebuilt extensions enhance search and statistics:
+
+| Extension | Feature | Used by |
+|---|---|---|
+| **regexp** | Regular expression search | `histdb-search --regex` |
+| **stats** | Median, percentile, etc. | `histdb-stats` |
+| **fuzzy** | Fuzzy string matching | Search |
+| **text** | String functions | Import/export |
+| **uuid** | Unique ID generation | Session management |
+
+To install:
+```zsh
+curl -sL "https://github.com/nalgeon/sqlean/releases/latest/download/sqlean-linux-x64.zip" -o /tmp/sqlean.zip
+unzip -q /tmp/sqlean.zip -d ~/.local/share/zshdb_extensions
+systemctl --user restart zshdb.service
+```
+
+Usage:
+```zsh
+# regex search
+histdb-search --regex '^docker\s+(ps|compose)'
+
+# stats with median/percentile
+histdb-stats
+```
 
 ## Database schema
 
