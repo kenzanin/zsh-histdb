@@ -152,12 +152,12 @@ EOF
         readonly HISTDB_SESSION
     fi
 
-    _histdb_query_batch >/dev/null <<EOF
-create index if not exists hist_time on history(start_time);
-create index if not exists place_dir on places(dir);
-create index if not exists place_host on places(host);
-create index if not exists history_command_place on history(command_id, place_id);
-EOF
+    _histdb_query "create index if not exists hist_time on history(start_time)"
+    _histdb_query "create index if not exists place_dir on places(dir)"
+    _histdb_query "create index if not exists place_host on places(host)"
+    _histdb_query "create index if not exists history_command_place on history(command_id, place_id)"
+    _histdb_query "create index if not exists hist_time_cmd on history(start_time DESC, command_id)"
+    _histdb_query "create index if not exists hist_time_place on history(start_time DESC, place_id)"
 }
 
 declare -ga _BORING_COMMANDS
