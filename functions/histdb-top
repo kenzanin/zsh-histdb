@@ -25,7 +25,7 @@ histdb-top() {
             --desc) order="desc" ;;
         esac
     done
-    _histdb_query_local -separator "$sep" -header \
+    _histdb_query -separator "$sep" -header \
         "select count(*) as count, places.host, replace($field, '
 ', '
 $sep$sep') as $mode from history left join commands on history.command_id=commands.id left join places on history.place_id=places.id group by places.host, $field order by count(*) $order" | \

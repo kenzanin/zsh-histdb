@@ -2,7 +2,7 @@
 
 ## News
 
-- **06/05/26**: Added `histdb-info` diagnostics, `histdb-dedup` dedup, direct local SQLite reads (3-5x faster), sqlean extensions (regexp, stats, etc.), covering indexes on `start_time`, `--regex` search flag, Ctrl-K delete shortcut. Plugin now bundles 14 SQLite extensions in `extension/`.
+- **06/05/26**: Added `histdb-info` diagnostics, `histdb-dedup` dedup, sqlean extensions (regexp, stats, etc.), covering indexes on `start_time`, `--regex` search flag, Ctrl-K delete shortcut. Plugin now bundles 14 SQLite extensions in `extension/`.
 
 - **04/05/26**: Added fuzzy history search with `histdb-fzf` function (requires fzf). Supports Enter to select commands and Ctrl-J to jump to the command's directory. Added systemd user service setup for rqlite. Converted README from org to Markdown.
 
@@ -72,7 +72,7 @@ rehash          # rebuild command hash table
 which rqlite    # → /home/kenzanin/.local/bin/rqlite
 ```
 
-Read queries use direct `sqlite3 -readonly` access — no shell restart needed after installing new tools.
+All queries go through rqlite HTTP API — no direct SQLite access needed.
 
 ## Features
 
@@ -84,7 +84,7 @@ Results are sorted by **current directory first**, then by recency. No duplicate
 
 ### History Diagnostics (`histdb-info`)
 
-Shows full system status: plugin path, database file/size/records, rqlited version/port/status, installed client tools (curl, jq, sqlite3, fzf, bat), query mode (HTTP vs direct read), loaded SQLite extensions, and environment variables.
+Shows full system status: plugin path, database records, rqlited version/port/status, installed client tools (curl, jq, fzf, bat), loaded SQLite extensions, and environment variables.
 
 ```zsh
 histdb-info
@@ -109,13 +109,7 @@ histdb-stats
 
 ### Query Performance
 
-Read queries use **direct local SQLite** (`sqlite3 -readonly`) — 3-5x faster than HTTP:
-
-```
-sqlite3 -readonly ~/.local/share/zshdb_data/db.sqlite "SELECT argv FROM commands LIMIT 10"
-```
-
-Writes (inserts, deletes) still go through rqlite's HTTP API for consistency.
+All queries go through **rqlite HTTP API** — consistent, distributed, no local database file needed.
 
 ### Integration
 
@@ -127,9 +121,8 @@ Writes (inserts, deletes) still go through rqlite's HTTP API for consistency.
 
 You will need a running `rqlite` cluster. Query methods (auto-detected):
 
-- **`sqlite3 -readonly`** (fastest) — reads directly from `db.sqlite`, no HTTP overhead
-- **`curl` + `jq`** — HTTP API for writes (inserts, deletes, updates)
-- **`rlite` C client** — optional, even faster for HTTP operations
+- **`curl` + `jq`** — HTTP API for reads and writes (default)
+- **`rlite` C client** — optional, faster C client for rqlite operations
 
 Optional: `fzf` for interactive history search.
 
@@ -376,6 +369,27 @@ The fzf interface shows:
 
 - `fzf` must be installed and available in your PATH
 - Works as a ZLE widget (must be bound to a key, cannot be run as a command)
+
+## Up/Down Prefix History Search
+
+The `_histdb-up-line-or-beginning-search` and `_histdb-down-line-or-beginning-search` widgets replace zsh's default `up-line-or-beginning-search` / `down-line-or-beginning-search`. When you type a prefix (like `ssh`) and press Up, they query the rqlite database for commands starting with that prefix, sorted by recency (current host first).
+
+### Setup
+
+Bind to Up/Down arrows in your `~/.zshrc`:
+
+```zsh
+bindkey '^[[A' _histdb-up-line-or-beginning-search
+bindkey '^[[B' _histdb-down-line-or-beginning-search
+```
+
+### Behavior
+
+- **Up** — Query histdb for commands matching the current buffer prefix; press repeatedly to cycle older matches
+- **Down** — Cycle back to newer matches; at the start, restore the original prefix text
+- **Empty buffer + Up** — Shows most recent commands from current host
+- **Prefix match** — Queries across all hosts, but prefers current host results first
+- **Cached cycling** — Once results are fetched, Up/Down cycles the cached set without re-querying
 
 ## SQLite Extensions
 

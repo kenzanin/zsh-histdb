@@ -82,7 +82,8 @@ _histdb_query() {
     fi
 }
 
-_histdb_query_local() {
+# No longer needed - _histdb_query_local was removed in rqlite-only migration
+# _histdb_query_local() {
     _histdb_test_init
     local separator=$'\t'
     local header=0

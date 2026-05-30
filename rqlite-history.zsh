@@ -10,7 +10,6 @@ typeset -g HISTDB_QUERY=""
 typeset -g HISTDB_SESSION=""
 typeset -g HISTDB_HOST=""
 typeset -g HISTDB_INSTALLED_IN="${(%):-%N}"
-typeset -g HISTDB_LOCAL_DB="${HISTDB_LOCAL_DB:-$HOME/.local/share/zshdb_data/db.sqlite}"
 
 # Cache
 typeset -gA HISTDB_CACHE
@@ -118,41 +117,6 @@ _histdb_query_curl() {
                 echo "error in ${sql}: ${line#ERROR: }" >&2
             fi
         done
-    fi
-}
-
-_histdb_stop_sqlite_pipe() { return 0 }
-_histdb_start_sqlite_pipe() { return 0 }
-add-zsh-hook zshexit _histdb_stop_sqlite_pipe
-
-# Direct local SQLite read (fast, no HTTP overhead)
-_histdb_query_local() {
-    local separator=$'\t'
-    local header=0
-    local sql=""
-
-    local -a args
-    args=("$@")
-    local i=1
-    while (( i <= $#args )); do
-        case "${args[$i]}" in
-            -separator) separator="${args[$((i+1))]}"; i=$((i+2)) ;;
-            -header) header=1; i=$((i+1)) ;;
-            -noheader) header=0; i=$((i+1)) ;;
-            -batch) i=$((i+1)) ;;
-            -cmd) i=$((i+2)) ;;
-            *) sql="${args[$i]}"; i=$((i+1)) ;;
-        esac
-    done
-
-    [[ -z "$sql" ]] && sql="$(cat)"
-    [[ -z "$sql" ]] && return 0
-    [[ ! -f "$HISTDB_LOCAL_DB" ]] && { _histdb_query "$@"; return }
-
-    if (( header )); then
-        sqlite3 -readonly -header -separator "$separator" "$HISTDB_LOCAL_DB" "$sql" 2>/dev/null
-    else
-        sqlite3 -readonly -separator "$separator" "$HISTDB_LOCAL_DB" "$sql" 2>/dev/null
     fi
 }
 
@@ -275,3 +239,85 @@ _histdb_batch_insert() {
 
 add-zsh-hook zshaddhistory _histdb_addhistory
 add-zsh-hook precmd _histdb_update_outcome
+
+# ============================================================
+# Up/Down prefix search via histdb
+# Replaces zsh's up-line-or-beginning-search / down-line-or-beginning-search
+# Bind with:
+#   bindkey '^[[A' _histdb-up-line-or-beginning-search
+#   bindkey '^[[B' _histdb-down-line-or-beginning-search
+# ============================================================
+typeset -g HISTDB_PREFIX_QUERY=""
+typeset -ga HISTDB_PREFIX_RESULTS
+typeset -gi HISTDB_PREFIX_INDEX=-1
+
+_histdb-up-line-or-beginning-search() {
+    local prefix="$BUFFER"
+
+    if [[ -n "$HISTDB_PREFIX_QUERY" && "$prefix" == "$HISTDB_PREFIX_QUERY"* ]]; then
+        local n=$(( ${#HISTDB_PREFIX_RESULTS[@]} - 1 ))
+        (( HISTDB_PREFIX_INDEX < n )) && HISTDB_PREFIX_INDEX=$(( HISTDB_PREFIX_INDEX + 1 )) || HISTDB_PREFIX_INDEX=0
+        BUFFER="${HISTDB_PREFIX_RESULTS[$((HISTDB_PREFIX_INDEX + 1))]}"
+        CURSOR=${#BUFFER}
+        zle reset-prompt
+        return
+    fi
+
+    HISTDB_PREFIX_QUERY="$prefix"
+    HISTDB_PREFIX_INDEX=-1
+    HISTDB_PREFIX_RESULTS=()
+
+    _histdb_init
+
+    local sql
+    if [[ -z "$prefix" ]]; then
+        sql="SELECT commands.argv FROM history
+             JOIN commands ON history.command_id = commands.id
+             JOIN places ON history.place_id = places.id
+             WHERE places.host = '$(sql_escape $HOST)'
+             GROUP BY commands.argv
+             ORDER BY MAX(history.start_time) DESC
+             LIMIT 2000"
+    else
+        sql="SELECT commands.argv FROM history
+             JOIN commands ON history.command_id = commands.id
+             JOIN places ON history.place_id = places.id
+             WHERE commands.argv LIKE '$(sql_escape "$prefix")%'
+             GROUP BY commands.argv
+             ORDER BY MAX(CASE WHEN places.host = '$(sql_escape "$HOST")' THEN 1 ELSE 0 END) DESC,
+                      MAX(history.start_time) DESC
+             LIMIT 2000"
+    fi
+
+    local result line
+    result=$(_histdb_query "$sql" 2>/dev/null)
+    HISTDB_PREFIX_RESULTS=()
+    for line in "${(@f)result}"; do
+        [[ -z "$line" ]] && continue
+        HISTDB_PREFIX_RESULTS+=("$line")
+    done
+
+    if (( ${#HISTDB_PREFIX_RESULTS[@]} > 0 )); then
+        HISTDB_PREFIX_INDEX=0
+        BUFFER="${HISTDB_PREFIX_RESULTS[1]}"
+        CURSOR=${#BUFFER}
+    fi
+
+    zle reset-prompt
+}
+
+_histdb-down-line-or-beginning-search() {
+    if (( HISTDB_PREFIX_INDEX > 0 )); then
+        HISTDB_PREFIX_INDEX=$(( HISTDB_PREFIX_INDEX - 1 ))
+        BUFFER="${HISTDB_PREFIX_RESULTS[$((HISTDB_PREFIX_INDEX + 1))]}"
+        CURSOR=${#BUFFER}
+    elif (( HISTDB_PREFIX_INDEX == 0 )); then
+        HISTDB_PREFIX_INDEX=-1
+        BUFFER="$HISTDB_PREFIX_QUERY"
+        CURSOR=${#BUFFER}
+    fi
+    zle reset-prompt
+}
+
+zle -N _histdb-up-line-or-beginning-search
+zle -N _histdb-down-line-or-beginning-search
