@@ -69,11 +69,13 @@ histdb-fzf() {
             return
             ;;
         "ctrl-k")
-            # Delete this history entry
-            local cmd_to_delete=$(echo "$selection" | cut -f1)
-            local dir_to_delete=$(echo "$selection" | cut -f3)
+            # Delete all history entries matching this command+dir
+            local cmd_to_delete="${selection%%$sep*}"
+            cmd_to_delete="${cmd_to_delete#\"}"
+            cmd_to_delete="${cmd_to_delete%\"}"
+            local dir_to_delete=$(print -r -- "$selection" | cut -f3)
             if [[ -n "$cmd_to_delete" ]]; then
-                _histdb_query "DELETE FROM history WHERE id IN (SELECT h.id FROM history h JOIN commands c ON h.command_id = c.id JOIN places p ON h.place_id = p.id WHERE c.argv='$(sql_escape "$cmd_to_delete")' AND p.dir='$(sql_escape "$dir_to_delete")' LIMIT 1)"
+                _histdb_query "DELETE FROM history WHERE id IN (SELECT h.id FROM history h JOIN commands c ON h.command_id = c.id JOIN places p ON h.place_id = p.id WHERE c.argv='$(sql_escape "$cmd_to_delete")' AND p.dir='$(sql_escape "$dir_to_delete")')" > /dev/null 2>&1
                 zle -M "Deleted: $cmd_to_delete"
             fi
             ;;
