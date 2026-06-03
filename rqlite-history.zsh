@@ -6,25 +6,9 @@ zmodload zsh/datetime
 autoload -U add-zsh-hook
 
 typeset -g HISTDB_RQLITE_URL="${HISTDB_RQLITE_URL:-http://127.1.1.1:50001}"
-typeset -g HISTDB_QUERY=""
 typeset -g HISTDB_SESSION=""
 typeset -g HISTDB_HOST=""
 typeset -g HISTDB_INSTALLED_IN="${(%):-%N}"
-
-# Cache
-typeset -gA HISTDB_CACHE
-typeset -gi HISTDB_CACHE_MAX=100
-
-_histdb_cache_get() {
-    echo "${HISTDB_CACHE[$1]:-}"
-}
-
-_histdb_cache_set() {
-    if [[ ${#HISTDB_CACHE[@]} -ge $HISTDB_CACHE_MAX ]]; then
-        HISTDB_CACHE=()
-    fi
-    HISTDB_CACHE[$1]="$2"
-}
 
 # Detect rlite at init time, re-check at query time
 typeset -g HISTDB_RLITE_BIN=""
@@ -156,8 +140,8 @@ EOF
     _histdb_query "create index if not exists hist_time_place on history(start_time DESC, place_id)"
 }
 
-declare -ga _BORING_COMMANDS
-_BORING_COMMANDS=("^ls$" "^cd$" "^ " "^histdb" "^top$" "^htop$")
+typeset -ga _BORING_PREFIX
+_BORING_PREFIX=(" " "histdb" "ls" "cd")
 
 if [[ -z "${HISTDB_TABULATE_CMD[*]:-}" ]]; then
     declare -ga HISTDB_TABULATE_CMD
@@ -168,7 +152,6 @@ _histdb_update_outcome() {
     local retval=$?
     local finished=$EPOCHSECONDS
     [[ -z "${HISTDB_SESSION}" ]] && return
-    _histdb_init
     _histdb_query_batch <<EOF &|
 update history set
       exit_status = ${retval},
@@ -183,8 +166,8 @@ _histdb_addhistory() {
     local cmd="${1[0, -2]}"
     if [[ -o histignorespace && "$cmd" =~ "^ " ]]; then return 0; fi
     if [[ ${cmd} == ${~HISTORY_IGNORE} ]]; then return 0; fi
-    for boring in "${_BORING_COMMANDS[@]}"; do
-        if [[ "$cmd" =~ $boring ]]; then return 0; fi
+    for boring in "${_BORING_PREFIX[@]}"; do
+        if [[ "$cmd" == "$boring"* ]]; then return 0; fi
     done
 
     local cmd="'$(sql_escape $cmd)'"
@@ -215,28 +198,6 @@ EOF
     return 0
 }
 
-_histdb_batch_insert() {
-    local entries=("$@")
-    if [[ ${#entries[@]} -eq 0 ]]; then
-        entries=("${(@f)$(cat)}")
-    fi
-
-    local sql="BEGIN TRANSACTION;"
-    for entry in "${entries[@]}"; do
-        local argv="$(echo "$entry" | cut -d'|' -f1)"
-        local dir="$(echo "$entry" | cut -d'|' -f2)"
-        local exit_status="$(echo "$entry" | cut -d'|' -f3)"
-        local start_time="$(echo "$entry" | cut -d'|' -f4)"
-
-        sql="${sql} INSERT OR IGNORE INTO commands (argv) VALUES ('$(sql_escape "$argv")');"
-        sql="${sql} INSERT OR IGNORE INTO places (host, dir) VALUES (${HISTDB_HOST}, '$(sql_escape "$dir")');"
-        sql="${sql} INSERT INTO history (session, command_id, place_id, exit_status, start_time) SELECT ${HISTDB_SESSION}, c.id, p.id, $exit_status, $start_time FROM commands c, places p WHERE c.argv='$(sql_escape "$argv")' AND p.host=${HISTDB_HOST} AND p.dir='$(sql_escape "$dir")';"
-    done
-    sql="${sql} COMMIT;"
-
-    _histdb_query "$sql"
-}
-
 add-zsh-hook zshaddhistory _histdb_addhistory
 add-zsh-hook precmd _histdb_update_outcome
 
@@ -254,7 +215,7 @@ typeset -gi HISTDB_PREFIX_INDEX=-1
 _histdb-up-line-or-beginning-search() {
     local prefix="$BUFFER"
 
-    if [[ -n "$HISTDB_PREFIX_QUERY" && "$prefix" == "$HISTDB_PREFIX_QUERY"* ]]; then
+    if (( ${#HISTDB_PREFIX_RESULTS[@]} > 0 )) && [[ "$prefix" == "$HISTDB_PREFIX_QUERY"* ]]; then
         local n=$(( ${#HISTDB_PREFIX_RESULTS[@]} - 1 ))
         (( HISTDB_PREFIX_INDEX < n )) && HISTDB_PREFIX_INDEX=$(( HISTDB_PREFIX_INDEX + 1 )) || HISTDB_PREFIX_INDEX=0
         BUFFER="${HISTDB_PREFIX_RESULTS[$((HISTDB_PREFIX_INDEX + 1))]}"
