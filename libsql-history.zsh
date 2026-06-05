@@ -60,31 +60,11 @@ _histdb_query() {
 #
 # sqld bug: backslash chars in text values are not JSON-escaped,
 # producing invalid JSON like `\ ` (backslash-space).
-# Pipes through python3 to normalize.
+# Fix: replace \X with \\X for X not a valid JSON escape char.
+# Valid JSON escapes after backslash: " \ / b f n r t u
 # ------------------------------------------------------------------
 _json_sanitize() {
-    if which python3 >/dev/null 2>&1; then
-        local script="${HISTDB_INSTALLED_IN:A:h}/extension/json_fix.py"
-        if [[ -f "$script" ]]; then
-            python3 "$script" 2>/dev/null
-        else
-            # Fallback: inline fix
-            python3 -c "
-import sys, json, re
-try:
-    data = json.loads(sys.stdin.read())
-    print(json.dumps(data))
-except json.JSONDecodeError:
-    sys.stdin.seek(0)
-    text = sys.stdin.read()
-    fixed = re.sub(r'\\\\(?=[^\"\\\\\\\\/bfnrtu])', r'\\\\\\\\', text)
-    data = json.loads(fixed)
-    print(json.dumps(data))
-" 2>/dev/null
-        fi
-    else
-        cat
-    fi
+    sed 's/\\\([^"\\/bfnrtu]\)/\\\\\1/g'
 }
 
 # ------------------------------------------------------------------
