@@ -85,7 +85,7 @@ _histdb_query_curl() {
     err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"')
     if [[ "$err_type" == "error" ]]; then
         err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"')
-        echo "error in ${sql}: ${err_msg}" >&2
+        printf '%s\n' "error in ${sql}: ${err_msg}" >&2
         return
     fi
 
@@ -142,7 +142,7 @@ _histdb_query_curl_sequence() {
     err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"')
     if [[ "$err_type" == "error" ]]; then
         err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"')
-        echo "error in sequence: ${err_msg}" >&2
+        printf '%s\n' "error in sequence: ${err_msg}" >&2
     fi
 }
 

@@ -24,7 +24,7 @@ CURL_RESPONSE=""
         # Write URL and body to separate files (handles multi-line body)
         print -r -- "$url" >! "${CURL_CAPT}.url"
         print -r -- "$body" >! "${CURL_CAPT}.body"
-        echo "$CURL_RESPONSE"
+        printf '%s' "$CURL_RESPONSE"
         return 0
     }
 }
@@ -161,4 +161,32 @@ CURL_RESPONSE=""
 
     local result=$(_histdb_query_curl "SELECT 1 WHERE 0" $'\t' 0)
     assert "$result" is_empty
+}
+
+@test 'Backslash-space preserved (no echo corruption)' {
+    # Build mock response via python to avoid any shell/zunit backslash mangling
+    typeset -g CURL_RESPONSE
+    CURL_RESPONSE=$(python3 -c 'import json; print(json.dumps({"baton":None,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"argv"}],"rows":[[{"type":"text","value":"CBT\\ Exam\\ -\\ Single"}]]}}}]}))') 2>/dev/null
+
+    local result=$(_histdb_query_curl "SELECT argv" $'\t' 0)
+    assert "$result" contains 'CBT\ Exam'
+    assert "$result" contains ' -\ '
+}
+
+@test 'Multiple backslash-space pairs' {
+    typeset -g CURL_RESPONSE
+    CURL_RESPONSE=$(python3 -c 'import json; print(json.dumps({"baton":None,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"p"}],"rows":[[{"type":"text","value":"Resident\\ Evil\\ 4\\ (USA)"}]]}}}]}))') 2>/dev/null
+
+    local result=$(_histdb_query_curl "SELECT p" $'\t' 0)
+    assert "$result" contains 'Resident'
+    assert "$result" contains '4\ '
+}
+
+@test 'Backslash before non-JSON-escape chars' {
+    typeset -g CURL_RESPONSE
+    CURL_RESPONSE=$(python3 -c 'import json; print(json.dumps({"baton":None,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"v"}],"rows":[[{"type":"text","value":"test\\ string and more"}]]}}}]}))') 2>/dev/null
+
+    local result=$(_histdb_query_curl "SELECT v" $'\t' 0)
+    assert "$result" contains 'test\ '
+    assert "$result" contains ' and more'
 }

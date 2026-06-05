@@ -54,7 +54,7 @@ histdb-fzf() {
     if [[ -n "$selection" ]]; then
         case "$key" in
         "ctrl-j")
-            local dir=$(echo "$selection" | cut -f3)
+            local dir=$(printf '%s' "$selection" | cut -f3)
             if [[ -n "$dir" && -d "$dir" ]]; then
                 cd "$dir" || return
             fi

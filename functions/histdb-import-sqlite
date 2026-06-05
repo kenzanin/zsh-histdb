@@ -32,8 +32,8 @@ EOSQL
     echo "Importing $(wc -l < "$temp_file") records..."
     local count=0
     while IFS=$'\t' read -r argv host dir start_time exit_status duration; do
-        local cmd_escaped=$(echo "$argv" | sed "s/'/''/g")
-        local dir_escaped=$(echo "$dir" | sed "s/'/''/g")
+    local cmd_escaped=$(printf '%s' "$argv" | sed "s/'/''/g")
+    local dir_escaped=$(printf '%s' "$dir" | sed "s/'/''/g")
         exit_status=${exit_status:-0}
         duration=${duration:-0}
 

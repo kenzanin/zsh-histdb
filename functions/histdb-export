@@ -9,8 +9,8 @@ histdb-export() {
         json)
             local json_query="SELECT json_object('time', datetime(history.start_time, 'unixepoch', 'localtime'), 'host', places.host, 'dir', places.dir, 'command', commands.argv, 'exit_status', history.exit_status, 'duration', history.duration) FROM history JOIN commands ON history.command_id = commands.id JOIN places ON history.place_id = places.id ORDER BY history.start_time DESC LIMIT 10000"
             local result=$(_histdb_query "$json_query" | jq -s '.')
-            if [[ -n "$output" ]]; then echo "$result" > "$output"
-            else echo "$result"
+            if [[ -n "$output" ]]; then printf '%s\n' "$result" > "$output"
+            else printf '%s\n' "$result"
             fi
             ;;
         text|*)
