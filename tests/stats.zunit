@@ -27,3 +27,21 @@
   result="$(histdb-stats 2>&1)"
   assert "$result" contains "Most active directories"
 }
+
+@test 'shows average duration' {
+  local result
+  result="$(histdb-stats 2>&1)"
+  assert "$result" contains "avg"
+}
+
+@test 'shows host breakdown' {
+  local result
+  result="$(histdb-stats 2>&1)"
+  assert "$result" contains "testhost"
+}
+
+@test 'shows hourly breakdown' {
+  local result
+  result="$(histdb-stats 2>&1)"
+  assert "$result" contains "hour"
+}

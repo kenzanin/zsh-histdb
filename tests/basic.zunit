@@ -1,0 +1,75 @@
+#!/usr/bin/env zunit
+
+@describe '_histdb_query argument parsing and basic execution'
+
+# Uses bootstrap override: _histdb_query uses local sqlite3 with test data
+# containing 10 commands, 3 places, 10 history entries.
+
+@test 'query without flags returns tab-separated rows' {
+    local result
+    result=$(_histdb_query "SELECT argv FROM commands ORDER BY id LIMIT 2")
+    assert "$status" equals 0
+    assert "$result" contains "ls -la"
+    assert "$result" contains "cd /home"
+}
+
+@test '-separator flag changes output delimiter' {
+    local result
+    result=$(_histdb_query -separator "|" "SELECT id, argv FROM commands LIMIT 1")
+    assert "$result" contains "|"
+}
+
+@test '-header flag includes column names' {
+    local result
+    result=$(_histdb_query -header "SELECT argv FROM commands LIMIT 1")
+    local lines=("${(f)result}")
+    assert "$lines[1]" contains "argv"
+}
+
+@test '-batch flag is silently ignored' {
+    local result
+    result=$(_histdb_query -batch "SELECT count(*) FROM commands")
+    assert "$status" equals 0
+}
+
+@test 'empty SQL returns cleanly' {
+    local result
+    result=$(_histdb_query ""
+    )
+    assert "$status" equals 0
+    assert "$result" is_empty
+}
+
+@test 'empty stdin returns cleanly' {
+    local result
+    result=$(_histdb_query <<< "")
+    assert "$status" equals 0
+    assert "$result" is_empty
+}
+
+@test '-cmd flag consumed without error' {
+    local result
+    result=$(_histdb_query -cmd "someval" "SELECT 42")
+    assert "$result" contains "42"
+}
+
+@test 'HISTDB_FILE reference in args is filtered out' {
+    local result
+    result=$(_histdb_query "/some/db/file.sqlite" "SELECT 99")
+    assert "$result" contains "99"
+}
+
+@test 'complex query with joins' {
+    local result
+    result=$(_histdb_query "SELECT c.argv FROM history h JOIN commands c ON h.command_id = c.id JOIN places p ON h.place_id = p.id LIMIT 1")
+    assert "$status" equals 0
+    assert "$result" is_not_empty
+}
+
+@test 'aggregate query returns count' {
+    local result
+    result=$(_histdb_query "SELECT count(*) FROM history")
+    assert "$result" equals "10"
+}
+
+

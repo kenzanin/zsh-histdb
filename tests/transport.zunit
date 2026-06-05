@@ -1,0 +1,164 @@
+#!/usr/bin/env zunit
+
+@describe 'Hrana3 transport (_histdb_query_curl)'
+
+# Bootstrap loads libsql-history.zsh with real _histdb_query_curl.
+# We mock curl to test the Hrana3 wire format parser in isolation.
+
+CURL_RESPONSE=""
+
+@setup {
+    typeset -g CURL_CAPT="${TMPDIR:-/tmp}/zcurl-$$.txt"
+    : > "$CURL_CAPT"
+
+    curl() {
+        local url="" body=""
+        local args=("$@") i=1
+        while (( i <= $#args )); do
+            case "${args[$i]}" in
+                -d) i=$((i+1)); body="${args[$i]}" ;;
+                http://*|https://*) url="${args[$i]}" ;;
+            esac
+            i=$((i+1))
+        done
+        # Write URL and body to separate files (handles multi-line body)
+        print -r -- "$url" >! "${CURL_CAPT}.url"
+        print -r -- "$body" >! "${CURL_CAPT}.body"
+        echo "$CURL_RESPONSE"
+        return 0
+    }
+}
+
+@teardown {
+    CURL_RESPONSE=""
+    rm -f "$CURL_CAPT" "${CURL_CAPT}.url" "${CURL_CAPT}.body"
+    unfunction curl 2>/dev/null || true
+}
+
+@test 'SELECT returns rows' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"argv"}],"rows":[[{"type":"text","value":"ls -la"}],[{"type":"text","value":"git status"}]]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT argv FROM commands" $'\t' 0)
+    assert "$result" contains "ls -la"
+    assert "$result" contains "git status"
+}
+
+@test 'SELECT with header includes column names' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"mycol"}],"rows":[[{"type":"text","value":"myval"}]]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT mycol" $'\t' 1)
+    assert "$result" contains "mycol"
+    assert "$result" contains "myval"
+}
+
+@test 'INSERT produces no output' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[],"rows":[],"affected_row_count":1}}}]}'
+
+    local result=$(_histdb_query_curl "INSERT INTO t VALUES(1)" $'\t' 0 2>&1)
+    assert "$result" is_empty
+}
+
+@test 'NULL becomes empty in output' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"a"}],"rows":[[{"type":"null"}]]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT NULL" $'\t' 0)
+    assert "$result" is_empty
+}
+
+@test 'Integer value is rendered as string' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"v"}],"rows":[[{"type":"integer","value":"42"}]]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT 42" $'\t' 0)
+    assert "$result" equals "42"
+}
+
+@test 'Text value passes through' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"v"}],"rows":[[{"type":"text","value":"hello world"}]]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT 'hello world'" $'\t' 0)
+    assert "$result" contains "hello world"
+}
+
+@test 'Float value rendered as string' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"v"}],"rows":[[{"type":"float","value":3.14}]]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT 3.14" $'\t' 0)
+    assert "$result" equals "3.14"
+}
+
+@test 'Multiple rows produce multiple output lines' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"v"}],"rows":[[{"type":"text","value":"a"}],[{"type":"text","value":"b"}],[{"type":"text","value":"c"}]]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT v" $'\t' 0)
+    local lines=("${(f)result}")
+    # Verify each row individually (avoid $#lines in assert)
+    assert "$lines[1]" equals "a"
+    assert "$lines[2]" equals "b"
+    assert "$lines[3]" equals "c"
+}
+
+@test 'Error response goes to stderr' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"error","error":{"message":"SQLite error: no such table: foo"}}]}'
+
+    local result=$(_histdb_query_curl "SELECT * FROM foo" $'\t' 0 2>&1)
+    assert "$result" contains "error in SELECT * FROM foo"
+    assert "$result" contains "no such table"
+}
+
+@test 'Request body contains execute type' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[],"rows":[]}}}]}'
+
+    _histdb_query_curl "SELECT 1" $'\t' 0 >/dev/null 2>&1
+    local body
+    body=$(cat "${CURL_CAPT}.body" 2>/dev/null)
+    assert "$body" contains "execute"
+    assert "$body" contains "SELECT 1"
+    assert "$body" contains "want_rows"
+}
+
+@test 'Sequence request uses sequence type' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"sequence"}}]}'
+
+    _histdb_query_curl_sequence "INSERT INTO t VALUES(1);" >/dev/null 2>&1
+    local body
+    body=$(cat "${CURL_CAPT}.body" 2>/dev/null)
+    assert "$body" contains "sequence"
+    assert "$body" contains "INSERT INTO t"
+}
+
+@test 'Sequence error reported' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"error","error":{"message":"near SQLITE_ERROR"}}]}'
+
+    local result=$(_histdb_query_curl_sequence "BAD SQL" 2>&1)
+    assert "$result" contains "error in sequence"
+}
+
+@test 'Pragma returns value' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"user_version"}],"rows":[[{"type":"integer","value":"2"}]]}}}]}'
+
+    local result=$(_histdb_query_curl "PRAGMA user_version" $'\t' 0)
+    assert "$result" equals "2"
+}
+
+@test 'curl failure handled gracefully' {
+    curl() { return 1 }
+    local result=$(_histdb_query_curl "SELECT 1" $'\t' 0 2>&1)
+    assert "$result" is_empty
+}
+
+@test 'Multi-row header includes all columns' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"a"},{"name":"b"}],"rows":[[{"type":"integer","value":"1"},{"type":"text","value":"hello"}]]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT 1, 'hello'" $'\t' 1)
+    assert "$result" contains "a"
+    assert "$result" contains "b"
+    assert "$result" contains "1"
+    assert "$result" contains "hello"
+}
+
+@test 'Empty result set produces no output' {
+    CURL_RESPONSE='{"baton":null,"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[],"rows":[]}}}]}'
+
+    local result=$(_histdb_query_curl "SELECT 1 WHERE 0" $'\t' 0)
+    assert "$result" is_empty
+}

@@ -1,0 +1,67 @@
+#!/usr/bin/env zunit
+
+@describe 'History hooks (_histdb_addhistory, _histdb_update_outcome)'
+
+# _histdb_addhistory runs inserts async (&|). We test the filtering
+# config, the internal insert logic (sync), and function existence.
+
+@setup {
+    _histdb_init
+}
+
+@test 'boring prefix list is configured' {
+    assert "${#_BORING_PREFIX}" equals "4"
+    assert "$_BORING_PREFIX[1]" equals " "
+    assert "$_BORING_PREFIX[2]" equals "histdb"
+    assert "$_BORING_PREFIX[3]" equals "ls"
+    assert "$_BORING_PREFIX[4]" equals "cd"
+}
+
+@test 'insert logic saves command synchronously' {
+    local cmd="'echo save_test_cmd'"
+    local pwd="'/tmp'"
+    _histdb_query_batch <<EOF
+insert into commands (argv) values (${cmd});
+insert into places   (host, dir) values (${HISTDB_HOST}, ${pwd});
+insert into history
+  (session, command_id, place_id, start_time)
+select
+  ${HISTDB_SESSION},
+  commands.id,
+  places.id,
+  ${EPOCHSECONDS}
+from
+  commands, places
+where
+  commands.argv = ${cmd} and
+  places.host = ${HISTDB_HOST} and
+  places.dir = ${pwd}
+;
+EOF
+
+    local result
+    result=$(_histdb_query "SELECT argv FROM commands WHERE argv = 'echo save_test_cmd'")
+    assert "$result" contains "save_test_cmd"
+}
+
+@test 'basic insert via _histdb_query works' {
+    _histdb_query "INSERT INTO commands (argv) VALUES ('test_direct_insert')"
+    local result
+    result=$(_histdb_query "SELECT argv FROM commands WHERE argv = 'test_direct_insert'")
+    assert "$result" equals "test_direct_insert"
+}
+
+@test '_histdb_addhistory function exists' {
+    assert "$(typeset -f _histdb_addhistory)" is_not_empty
+}
+
+@test '_histdb_update_outcome function exists' {
+    assert "$(typeset -f _histdb_update_outcome)" is_not_empty
+}
+
+@test '_histdb_addhistory can be called' {
+    # Just verify the function is callable (async insert may or may not
+    # complete before our check — that's expected behavior)
+    _histdb_addhistory $'some_test_command\n'
+    assert "$?" equals "0"
+}

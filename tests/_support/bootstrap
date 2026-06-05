@@ -82,6 +82,16 @@ _histdb_query() {
     fi
 }
 
+# Also override batch to use local sqlite3 (hooks like _histdb_addhistory
+# call _histdb_query_batch which would otherwise hit the real sqld server)
+_histdb_query_batch() {
+    local sql
+    sql="$(cat)"
+    [[ -z "$sql" ]] && return 0
+    _histdb_test_init
+    sqlite3 -separator $'\t' "$TEST_DB" "$sql" 2>/dev/null
+}
+
 HISTDB_SESSION=1
 HISTDB_HOST="'testhost'"
 

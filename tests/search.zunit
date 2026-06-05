@@ -33,3 +33,29 @@
   result="$(histdb-search "xzxxyxz" 2>&1)"
   assert "$result" is_empty
 }
+
+@test 'search with no args shows all commands' {
+  local result
+  result="$(histdb-search 2>&1 | head -20)"
+  assert "$status" equals 0
+  assert "$result" contains "ls"
+}
+
+@test 'search by directory prefix' {
+  local result
+  result="$(histdb-search --dir=/home 2>&1)"
+  assert "$result" contains "ls -la"
+}
+
+@test 'search by specific exit status' {
+  local result
+  result="$(histdb-search --exit=0 2>&1)"
+  assert "$status" equals 0
+}
+
+@test 'regex search works' {
+  local result
+  result="$(histdb-search --regex "git|docker" 2>&1)"
+  assert "$result" contains "git"
+  assert "$result" contains "docker"
+}
