@@ -84,7 +84,7 @@ _histdb_query_curl() {
     local err_type err_msg
     err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"')
     if [[ "$err_type" == "error" ]]; then
-        err_msg=$(echo "$response" | jq -r '.results[0].error.message // "unknown error"')
+        err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"')
         echo "error in ${sql}: ${err_msg}" >&2
         return
     fi
@@ -223,11 +223,6 @@ _histdb_addhistory() {
     for boring in "${_BORING_PREFIX[@]}"; do
         if [[ "$cmd" == "$boring"* ]]; then return 0; fi
     done
-
-    # Double backslashes so sqld outputs valid JSON (sqld bug: doesn't
-    # escape backslashes in text values). The JSON round-trip produces
-    # the correct single backslash when displayed.
-    cmd="${cmd//\\/\\\\}"
 
     local cmd="'$(sql_escape $cmd)'"
     local pwd="'$(sql_escape ${PWD})'"
