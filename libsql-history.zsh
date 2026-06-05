@@ -56,6 +56,38 @@ _histdb_query() {
 }
 
 # ------------------------------------------------------------------
+# _json_sanitize — Fix sqld's broken JSON (backslashes not escaped)
+#
+# sqld bug: backslash chars in text values are not JSON-escaped,
+# producing invalid JSON like `\ ` (backslash-space).
+# Pipes through python3 to normalize.
+# ------------------------------------------------------------------
+_json_sanitize() {
+    if which python3 >/dev/null 2>&1; then
+        local script="${HISTDB_INSTALLED_IN:A:h}/extension/json_fix.py"
+        if [[ -f "$script" ]]; then
+            python3 "$script" 2>/dev/null
+        else
+            # Fallback: inline fix
+            python3 -c "
+import sys, json, re
+try:
+    data = json.loads(sys.stdin.read())
+    print(json.dumps(data))
+except json.JSONDecodeError:
+    sys.stdin.seek(0)
+    text = sys.stdin.read()
+    fixed = re.sub(r'\\\\(?=[^\"\\\\\\\\/bfnrtu])', r'\\\\\\\\', text)
+    data = json.loads(fixed)
+    print(json.dumps(data))
+" 2>/dev/null
+        fi
+    else
+        cat
+    fi
+}
+
+# ------------------------------------------------------------------
 # _histdb_query_curl — Single-statement Hrana3 execute via POST /v3/pipeline
 #
 # Sends one execute request and parses the result.
@@ -79,6 +111,9 @@ _histdb_query_curl() {
     response=$(curl -s -X POST "$url" \
         -H "Content-Type: application/json" \
         -d "$body") || return 0
+
+    # Sanitize JSON (fix sqld's unescaped backslashes)
+    response=$(echo "$response" | _json_sanitize) || return 0
 
     # Check for pipeline/statement-level error
     local err_type err_msg
@@ -137,6 +172,9 @@ _histdb_query_curl_sequence() {
     response=$(curl -s -X POST "$url" \
         -H "Content-Type: application/json" \
         -d "$body") || return 0
+
+    # Sanitize JSON (fix sqld's unescaped backslashes)
+    response=$(echo "$response" | _json_sanitize) || return 0
 
     local err_type err_msg
     err_type=$(echo "$response" | jq -r '.results[0].type // "ok"')
