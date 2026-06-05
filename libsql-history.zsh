@@ -56,18 +56,6 @@ _histdb_query() {
 }
 
 # ------------------------------------------------------------------
-# _json_sanitize — Fix sqld's broken JSON (backslashes not escaped)
-#
-# sqld bug: backslash chars in text values are not JSON-escaped,
-# producing invalid JSON like `\ ` (backslash-space).
-# Fix: replace \X with \\X for X not a valid JSON escape char.
-# Valid JSON escapes after backslash: " \ / b f n r t u
-# ------------------------------------------------------------------
-_json_sanitize() {
-    sed 's/\\\([^"\\/bfnrtu]\)/\\\\\1/g'
-}
-
-# ------------------------------------------------------------------
 # _histdb_query_curl — Single-statement Hrana3 execute via POST /v3/pipeline
 #
 # Sends one execute request and parses the result.
@@ -92,12 +80,9 @@ _histdb_query_curl() {
         -H "Content-Type: application/json" \
         -d "$body") || return 0
 
-    # Sanitize JSON (fix sqld's unescaped backslashes)
-    response=$(echo "$response" | _json_sanitize) || return 0
-
     # Check for pipeline/statement-level error
     local err_type err_msg
-    err_type=$(echo "$response" | jq -r '.results[0].type // "ok"')
+    err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"')
     if [[ "$err_type" == "error" ]]; then
         err_msg=$(echo "$response" | jq -r '.results[0].error.message // "unknown error"')
         echo "error in ${sql}: ${err_msg}" >&2
@@ -106,17 +91,17 @@ _histdb_query_curl() {
 
     # Extract result
     local result_json
-    result_json=$(echo "$response" | jq '.results[0].response.result')
+    result_json=$(print -r -- "$response" | jq '.results[0].response.result')
     [[ -z "$result_json" || "$result_json" == "null" ]] && return 0
 
     # Print header if requested
     if (( header )); then
-        echo "$result_json" | jq -r --arg sep "$separator" \
+        print -r -- "$result_json" | jq -r --arg sep "$separator" \
             '[.cols[] | .name // ""] | join($sep)'
     fi
 
     # Print rows — convert Hrana3 Value objects to plain text
-    echo "$result_json" | jq -r --arg sep "$separator" '
+    print -r -- "$result_json" | jq -r --arg sep "$separator" '
         .rows[] | [
             .[] |
             if .type == "null" then ""
@@ -153,13 +138,10 @@ _histdb_query_curl_sequence() {
         -H "Content-Type: application/json" \
         -d "$body") || return 0
 
-    # Sanitize JSON (fix sqld's unescaped backslashes)
-    response=$(echo "$response" | _json_sanitize) || return 0
-
     local err_type err_msg
-    err_type=$(echo "$response" | jq -r '.results[0].type // "ok"')
+    err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"')
     if [[ "$err_type" == "error" ]]; then
-        err_msg=$(echo "$response" | jq -r '.results[0].error.message // "unknown error"')
+        err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"')
         echo "error in sequence: ${err_msg}" >&2
     fi
 }
@@ -241,6 +223,11 @@ _histdb_addhistory() {
     for boring in "${_BORING_PREFIX[@]}"; do
         if [[ "$cmd" == "$boring"* ]]; then return 0; fi
     done
+
+    # Double backslashes so sqld outputs valid JSON (sqld bug: doesn't
+    # escape backslashes in text values). The JSON round-trip produces
+    # the correct single backslash when displayed.
+    cmd="${cmd//\\/\\\\}"
 
     local cmd="'$(sql_escape $cmd)'"
     local pwd="'$(sql_escape ${PWD})'"
