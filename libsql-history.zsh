@@ -1,3 +1,8 @@
+# libsql-history.zsh — Core engine for zsh-histdb with sqld (libsql) via Hrana3
+#
+# Uses sqld's Hrana3 over HTTP (POST /v3/pipeline) for all SQL operations.
+# Replaces the old rqlite HTTP API transport with Hrana3 over HTTP.
+
 which curl >/dev/null 2>&1 || return
 which jq >/dev/null 2>&1 || return
 
@@ -5,23 +10,22 @@ zmodload zsh/datetime
 
 autoload -U add-zsh-hook
 
-typeset -g HISTDB_RQLITE_URL="${HISTDB_RQLITE_URL:-http://127.1.1.1:50001}"
+typeset -g HISTDB_LIBSQL_URL="${HISTDB_LIBSQL_URL:-http://127.100.1.2:8080}"
 typeset -g HISTDB_SESSION=""
 typeset -g HISTDB_HOST=""
 typeset -g HISTDB_INSTALLED_IN="${(%):-%N}"
-
-# Detect rlite at init time, re-check at query time
-typeset -g HISTDB_RLITE_BIN=""
-if which rlite >/dev/null 2>&1; then
-    HISTDB_RLITE_BIN="$(which rlite)"
-fi
 
 sql_escape() {
     print -r -- "${@//\'/\'\'}"
 }
 
+# ------------------------------------------------------------------
+# _histdb_query — Central dispatcher for SQL statements
+#   Parses common flags, then delegates to _histdb_query_curl.
+#   Signature matches the old interface so all callers work unchanged.
+# ------------------------------------------------------------------
 _histdb_query() {
-    local url="${HISTDB_RQLITE_URL}"
+    local url="${HISTDB_LIBSQL_URL}"
     local separator=$'\t'
     local header=0
     local sql=""
@@ -48,64 +52,114 @@ _histdb_query() {
     if [[ -z "$sql" ]]; then sql="$(cat)"; fi
     [[ -z "$sql" ]] && return 0
 
-    # Re-check for rlite (supports rehash)
-    if [[ -z "$HISTDB_RLITE_BIN" ]] && which rlite >/dev/null 2>&1; then
-        HISTDB_RLITE_BIN="$(which rlite)"
-    fi
-
-    if [[ -n "$HISTDB_RLITE_BIN" ]]; then
-        _histdb_query_rlite "$sql" "$separator" "$header"
-    else
-        _histdb_query_curl "$sql" "$separator" "$header"
-    fi
+    _histdb_query_curl "$sql" "$separator" "$header"
 }
 
-_histdb_query_rlite() {
-    if [[ "$3" == "1" ]]; then
-        "$HISTDB_RLITE_BIN" "$HISTDB_RQLITE_URL" "$1" | awk -F'|' 'BEGIN{OFS=FS} NR==1{print; next} {print}' | sed "s/|/$2/g"
-    else
-        "$HISTDB_RLITE_BIN" "$HISTDB_RQLITE_URL" "$1" | tail -n +2 | sed "s/|/$2/g"
-    fi
-}
-
+# ------------------------------------------------------------------
+# _histdb_query_curl — Single-statement Hrana3 execute via POST /v3/pipeline
+#
+# Sends one execute request and parses the result.
+# Outputs tab-separated rows (and optional header) matching the old format.
+# Errors go to stderr, nothing on stdout for mutations.
+# ------------------------------------------------------------------
 _histdb_query_curl() {
-    local sql="$1" separator="$2" header="$3" endpoint="query"
-    local first_word="${${sql##[[:space:]]##}%%[[:space:]]*}"
-    case "${(L)first_word}" in
-        insert|update|delete|create|drop|replace|alter) endpoint="execute" ;;
-        pragma)
-            if [[ $sql == *"="* ]]; then endpoint="execute"; fi
-            ;;
-    esac
+    local sql="$1" separator="$2" header="$3"
+    local url="${HISTDB_LIBSQL_URL}/v3/pipeline"
 
-    if [[ "$endpoint" == "query" ]]; then
-        curl -s -G "${HISTDB_RQLITE_URL}/db/query?pretty=false" --data-urlencode "q=${sql}" | \
-            jq -r --arg sep "$separator" --arg header "$header" '
-                if .results[0].error then "ERROR: " + .results[0].error
-                else .results[0] |
-                    (if $header == "1" then .columns | join($sep) else empty end),
-                    (if .values then .values[] | map(if . == null then "" else . end) | join($sep) else empty end)
-                end' | while read -r line; do
-            if [[ $line == "ERROR: "* ]]; then
-                echo "error in ${sql}: ${line#ERROR: }" >&2
-            else
-                print -r -- "$line"
-            fi
-        done
-    else
-        curl -s -X POST "${HISTDB_RQLITE_URL}/db/execute?pretty=false" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg sql "$sql" '[$sql]')" | \
-            jq -r 'if .results[0].error then "ERROR: " + .results[0].error else empty end' | while read -r line; do
-            if [[ $line == "ERROR: "* ]]; then
-                echo "error in ${sql}: ${line#ERROR: }" >&2
-            fi
-        done
+    local body response
+    body=$(jq -n \
+        --arg sql "$sql" \
+        '{
+            "baton": null,
+            "requests": [
+                {"type": "execute", "stmt": {"sql": $sql, "args": [], "want_rows": true}}
+            ]
+        }') || return 0
+
+    response=$(curl -s -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -d "$body") || return 0
+
+    # Check for pipeline/statement-level error
+    local err_type err_msg
+    err_type=$(echo "$response" | jq -r '.results[0].type // "ok"')
+    if [[ "$err_type" == "error" ]]; then
+        err_msg=$(echo "$response" | jq -r '.results[0].error.message // "unknown error"')
+        echo "error in ${sql}: ${err_msg}" >&2
+        return
+    fi
+
+    # Extract result
+    local result_json
+    result_json=$(echo "$response" | jq '.results[0].response.result')
+    [[ -z "$result_json" || "$result_json" == "null" ]] && return 0
+
+    # Print header if requested
+    if (( header )); then
+        echo "$result_json" | jq -r --arg sep "$separator" \
+            '[.cols[] | .name // ""] | join($sep)'
+    fi
+
+    # Print rows — convert Hrana3 Value objects to plain text
+    echo "$result_json" | jq -r --arg sep "$separator" '
+        .rows[] | [
+            .[] |
+            if .type == "null" then ""
+            elif .type == "integer" then .value
+            elif .type == "text" then .value
+            elif .type == "float" then (.value | tostring)
+            elif .type == "blob" then .base64
+            else ""
+            end
+        ] | join($sep)'
+}
+
+# ------------------------------------------------------------------
+# _histdb_query_curl_sequence — Multi-statement Hrana3 sequence request
+#
+# For batch operations (multiple semicolon-separated SQLs).
+# Rows are ignored — only error checking.
+# ------------------------------------------------------------------
+_histdb_query_curl_sequence() {
+    local sql="$1"
+    local url="${HISTDB_LIBSQL_URL}/v3/pipeline"
+
+    local body response
+    body=$(jq -n \
+        --arg sql "$sql" \
+        '{
+            "baton": null,
+            "requests": [
+                {"type": "sequence", "sql": $sql}
+            ]
+        }') || return 0
+
+    response=$(curl -s -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -d "$body") || return 0
+
+    local err_type err_msg
+    err_type=$(echo "$response" | jq -r '.results[0].type // "ok"')
+    if [[ "$err_type" == "error" ]]; then
+        err_msg=$(echo "$response" | jq -r '.results[0].error.message // "unknown error"')
+        echo "error in sequence: ${err_msg}" >&2
     fi
 }
 
-_histdb_query_batch() { _histdb_query "$(cat)" }
+# ------------------------------------------------------------------
+# _histdb_query_batch — Batch operation (reads SQL from stdin)
+#   Delegates to _histdb_query_curl_sequence for multi-statement support.
+# ------------------------------------------------------------------
+_histdb_query_batch() {
+    local sql
+    sql="$(cat)"
+    [[ -z "$sql" ]] && return 0
+    _histdb_query_curl_sequence "$sql"
+}
 
+# ------------------------------------------------------------------
+# _histdb_init — Idempotent database initialisation
+# ------------------------------------------------------------------
 _histdb_init() {
     [[ -n "${HISTDB_SESSION}" ]] && return
 

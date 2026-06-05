@@ -9,37 +9,31 @@ histdb-info() {
     echo ""
 
     echo "Database:"
-    echo "  Backend: rqlite (distributed SQLite via HTTP)"
+    echo "  Backend: sqld (libSQL server via Hrana3 HTTP)"
     local total=$(_histdb_query "SELECT count(*) FROM history" 2>/dev/null)
     local unique=$(_histdb_query "SELECT count(DISTINCT command_id) FROM history" 2>/dev/null)
     echo "  Records: ${total:-0} history entries, ${unique:-0} unique commands"
     echo ""
 
-    echo "rqlited (server):"
-    local rqlited_path
-    rqlited_path=$(which rqlited 2>/dev/null)
-    if [[ -n "$rqlited_path" ]]; then
-        local rqlited_ver
-        rqlited_ver=$("$rqlited_path" --version 2>&1 | head -3)
-        echo "  Binary: $rqlited_path"
-        echo "$rqlited_ver" | sed 's/^/  Version: /'
+    echo "sqld (server):"
+    local sqld_path
+    sqld_path=$(which sqld 2>/dev/null)
+    if [[ -n "$sqld_path" ]]; then
+        local sqld_ver
+        sqld_ver=$("$sqld_path" --version 2>&1 | head -3)
+        echo "  Binary: $sqld_path"
+        echo "$sqld_ver" | sed 's/^/  Version: /'
     else
         echo "  Binary: Not found in PATH"
     fi
-    local rqlited_addr="${HISTDB_RQLITE_URL#http://}"
-    rqlited_addr="${rqlited_addr%/}"
-    echo "  Address: $rqlited_addr"
-    local rqlited_port="${rqlited_addr##*:}"
-    echo "  Port:    $rqlited_port"
-    local status_file=$(mktemp)
-    if curl -s -G "$HISTDB_RQLITE_URL/status" > "$status_file" 2>/dev/null; then
-        local ready=$(jq -r '.store.ready' "$status_file" 2>/dev/null)
-        local raft_state=$(jq -r '.store.raft.state' "$status_file" 2>/dev/null)
-        echo "  Status:  $raft_state (ready: $ready)"
+    local sqld_addr="${HISTDB_LIBSQL_URL#http://}"
+    sqld_addr="${sqld_addr%/}"
+    echo "  Address: $sqld_addr"
+    if curl -s -o /dev/null -w "%{http_code}" "$HISTDB_LIBSQL_URL/v3" >/dev/null 2>&1; then
+        echo "  Status:  running (Hrana3)"
     else
         echo "  Status:  Connection failed"
     fi
-    rm -f "$status_file"
     local systemd_active=$(systemctl --user is-active zshdb.service 2>/dev/null)
     echo "  Systemd: $systemd_active"
     echo ""
@@ -68,11 +62,7 @@ histdb-info() {
     echo ""
 
     echo "Query mode:"
-    if [[ -n "$HISTDB_RLITE_BIN" ]]; then
-        echo "  Active:  rlite C client (fast)"
-    else
-        echo "  Active:  curl + jq (HTTP)"
-    fi
+    echo "  Protocol: Hrana3 over HTTP (POST /v3/pipeline)"
     echo ""
 
     echo "SQLite extensions:"
@@ -92,11 +82,11 @@ histdb-info() {
     echo ""
 
     echo "Environment:"
-    echo "  HISTDB_RQLITE_URL: $HISTDB_RQLITE_URL"
+    echo "  HISTDB_LIBSQL_URL: ${HISTDB_LIBSQL_URL}"
     echo "  HISTDB_SESSION:    ${HISTDB_SESSION:-not initialized}"
     echo "  HISTDB_HOST:       ${HISTDB_HOST:-not set}"
     echo ""
 
     echo "Manual queries:"
-    echo "  curl -s -G \"$HISTDB_RQLITE_URL/db/query\" --data-urlencode 'q=SELECT * FROM commands LIMIT 5' | jq ."
+    echo "  curl -s -X POST \"$HISTDB_LIBSQL_URL/v3/pipeline\" -H \"Content-Type: application/json\" -d '{\"baton\":null,\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":\"SELECT argv FROM commands LIMIT 5\",\"args\":[]}}]}' | jq ."
 }

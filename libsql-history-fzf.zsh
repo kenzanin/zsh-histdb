@@ -129,7 +129,7 @@ zle -N histdb-top-widget
 histdb-fzf-tmux() {
     if [[ -n "$TMUX" ]]; then
         tmux popup -d '#{pane_current_path}' -w 80% -h 60% -E \
-            "zsh -c 'source ${0:A:h}/rqlite-history.zsh && histdb-fzf'"
+            "zsh -c 'source ${0:A:h}/libsql-history.zsh && histdb-fzf'"
     else
         histdb-fzf
     fi

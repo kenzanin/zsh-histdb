@@ -7,9 +7,9 @@
 - **04/05/26**: Added fuzzy history search with `histdb-fzf` function (requires fzf). Supports Enter to select commands and Ctrl-J to jump to the command's directory. Added systemd user service setup for rqlite. Converted README from org to Markdown.
 
 ## What is this
+This is a zsh plugin that stores shell history into a sqld database (libSQL server via Hrana3).
 
-This is a zsh plugin that stores shell history into a distributed rqlite database (backed by SQLite).
-It stores your history into a distributed rqlite database.
+It stores your history into a sqld database.
 It improves on the normal history by storing, for each history command:
 
 - The start and stop times of the command
@@ -22,7 +22,7 @@ It improves on the normal history by storing, for each history command:
 
 This is a fork of [larkery/zsh-histdb](https://github.com/larkery/zsh-histdb) by Tom Hinton — the best zsh history plugin out there. The original uses a local SQLite file. Rock solid, but single-machine only.
 
-I wanted something **distributed** — same history across laptops, desktops, servers. Tried rqlite myself, failed. Then AI agents happened. So I sat down with Opencode and Deepseek/deepseek-v4-flash and just built it. They wrote the code, I drank coffee and pressed Ctrl+R.
+I wanted something **shared** — same history across laptops, desktops, servers. Started with rqlite (distributed SQLite via Raft), later migrated to sqld (libSQL server via Hrana3). Then AI agents happened. So I sat down with Opencode and Deepseek/deepseek-v4-flash and just built it. They wrote the code, I drank coffee and pressed Ctrl+R.
 
 This plugin is 90% AI-generated. I'm just the human in the loop with an obsession for good shell history.
 
@@ -30,9 +30,9 @@ This plugin is 90% AI-generated. I'm just the human in the loop with an obsessio
 
 ```
 zsh-histdb/
-├── rqlite-history.zsh              # Core (always loaded): query, init, hooks, cache
-├── rqlite-history-fzf.zsh          # ZLE widgets: histdb-fzf, histdb-top-widget
-├── rqlite-history-autosuggest.zsh  # zsh-autosuggestions integration
+├── libsql-history.zsh              # Core (always loaded): query, init, hooks, cache
+├── libsql-history-fzf.zsh          # ZLE widgets: histdb-fzf, histdb-top-widget
+├── libsql-history-autosuggest.zsh  # zsh-autosuggestions integration
 ├── extension/                      # SQLite extensions (sqlean: regexp, stats, etc.)
 ├── functions/                      # Autoloaded on first use (faster startup)
 │   ├── histdb                     # histdb command with all filters
@@ -61,30 +61,18 @@ This means faster shell startup - you don't pay for features you don't use.
 
 ### Zsh Rehash
 
-When you install `rqlite` (or any binary) while zsh is running:
+When you install a binary while zsh is running:
 
 ```zsh
 # Without rehash:
-which rqlite    # → not found (cached from PATH)
-
-# Fix:
-rehash          # rebuild command hash table
-which rqlite    # → /home/kenzanin/.local/bin/rqlite
+which sqld      # → not found (cached from PATH)
+...
+which sqld      # → /home/kenzanin/.local/bin/sqld
 ```
 
-All queries go through rqlite HTTP API — no direct SQLite access needed.
+All queries go through sqld Hrana3 HTTP API (`POST /v3/pipeline`) — no direct SQLite access needed.
 
-## Features
-
-### Fuzzy History Search (`histdb-fzf`)
-
-Press **Enter** to insert command, **Ctrl-J** to jump to directory, **Ctrl-K** to delete entry, **Ctrl-R** to cycle through history.
-
-Results are sorted by **current directory first**, then by recency. No duplicates (grouped by argv+dir).
-
-### History Diagnostics (`histdb-info`)
-
-Shows full system status: plugin path, database records, rqlited version/port/status, installed client tools (curl, jq, fzf, bat), loaded SQLite extensions, and environment variables.
+Shows full system status: plugin path, database records, sqld version/port/status, installed client tools (curl, jq, fzf, bat), loaded SQLite extensions, and environment variables.
 
 ```zsh
 histdb-info
@@ -109,7 +97,7 @@ histdb-stats
 
 ### Query Performance
 
-All queries go through **rqlite HTTP API** — consistent, distributed, no local database file needed.
+All queries go through **sqld Hrana3 HTTP API** (`POST /v3/pipeline`).
 
 ### Integration
 
@@ -119,14 +107,11 @@ All queries go through **rqlite HTTP API** — consistent, distributed, no local
 
 ## Installation
 
-You will need a running `rqlite` cluster. Query methods (auto-detected):
+You will need a running `sqld` server. All queries use **Hrana3 over HTTP**:
 
-- **`curl` + `jq`** — HTTP API for reads and writes (default)
-- **`rlite` C client** — optional, faster C client for rqlite operations
+- **`curl` + `jq`** — sends `POST /v3/pipeline` with JSON body
 
-Optional: `fzf` for interactive history search.
-
-Default rqlite URL is `http://localhost:4001`. You can change it by setting `HISTDB_RQLITE_URL`.
+Default sqld URL is `http://127.100.1.2:8080`. Change it by setting `HISTDB_LIBSQL_URL`.
 
 It is also possible to merge multiple history databases together without conflict, so long as all your machines have different hostnames.
 
@@ -142,26 +127,29 @@ git clone -b experimental https://github.com/kenzanin/zsh-histdb $HOME/.oh-my-zs
 Add this to your `$HOME/.zshrc`:
 
 ```zsh
-source $HOME/.oh-my-zsh/custom/plugins/zsh-histdb/rqlite-history.zsh
+source $HOME/.oh-my-zsh/custom/plugins/zsh-histdb/libsql-history.zsh
 autoload -Uz add-zsh-hook
 
  # Optional: Bind histdb-fzf to Ctrl+R for fuzzy history search
 bindkey '^R' histdb-fzf
 ```
 
-### Running rqlite as a systemd User Service
+### Running sqld as a systemd User Service
 
-Create a systemd user service file at `~/.config/systemd/user/zshdb.service`:
+Create `~/.config/systemd/user/zshdb.service`:
 
 ```ini
 [Unit]
-Description=zshdb server (rqlite)
+Description=zshdb server (sqld)
 After=network.target
 
 [Service]
 Type=simple
 ExecStartPre=/usr/bin/mkdir -p %h/.local/share/zshdb_data
-ExecStart=%h/.local/bin/rqlited -http-addr 127.1.1.1:50001 -raft-addr 127.1.1.1:50002 -extensions-path=%h/.local/share/zap/plugins/zsh-histdb/extension %h/.local/share/zshdb_data
+ExecStart=%h/.local/bin/sqld \
+    -d %h/.local/share/zshdb_data/sqld.db \
+    --http-listen-addr 127.100.1.2:8080 \
+    --extensions-path %h/.local/share/zap/plugins/zsh-histdb/extension
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=%h/.local/share/zshdb_data
@@ -170,32 +158,33 @@ WorkingDirectory=%h/.local/share/zshdb_data
 WantedBy=default.target
 ```
 
-**Note:** Make sure the path to `rqlited` is correct. Check with:
-```zsh
-which rqlited  # e.g., /home/kenzanin/.local/bin/rqlited
-```
+Then enable and start:
 
-Then enable and start the service:
-
-```zsh
+```bash
 systemctl --user daemon-reload
 systemctl --user enable --now zshdb.service
 ```
 
-This will:
+**Note:** Make sure the path to `sqld` is correct. Check with:
 
-- Automatically start rqlite on boot (user login)
-- Restart on failure
-- Store data in `~/.local/share/zshdb_data`
-- Listen on `127.1.1.1:50001` (HTTP API) and `127.1.1.1:50002` (raft protocol)
-
-**Note:** The systemd service and `HISTDB_RQLITE_URL` are independent. If you change the port in the systemd service, you must manually update `HISTDB_RQLITE_URL` in your `~/.zshrc` to match:
-
-```zsh
-export HISTDB_RQLITE_URL="http://127.1.1.1:50001"
+```bash
+which sqld  # e.g., /home/kenzanin/.local/bin/sqld
 ```
 
-The default URL is already set to `http://127.1.1.1:50001` in `rqlite-history.zsh`, so you only need to set `HISTDB_RQLITE_URL` if you use a different port or remote server.
+This service will:
+- Create the data directory on startup
+- Start sqld with Hrana3 HTTP on port 8080
+- Load SQLite extensions from the plugin's extension directory (requires `trusted.lst`)
+- Automatically restart on failure
+- Automatically start sqld on boot (user login)
+
+**Note:** The systemd service and `HISTDB_LIBSQL_URL` are independent. If you change the port in the systemd service, you must manually update `HISTDB_LIBSQL_URL` in your `~/.zshrc` to match:
+
+```bash
+export HISTDB_LIBSQL_URL="http://127.100.1.2:8080"
+```
+
+The default URL is already set to `http://127.100.1.2:8080` in `libsql-history.zsh`, so you only need to set `HISTDB_LIBSQL_URL` if you use a different port or remote server.
 
 ### Note for OS X users
 
@@ -214,7 +203,7 @@ HISTDB_TABULATE_CMD=(sed -e $'s/\x1f/\t/g')
 If you have an existing `~/.histdb/zsh-history.db` (or other SQLite database), use the built-in import function:
 
 ```zsh
-source /home/kenzanin/.local/share/zap/plugins/zsh-histdb/rqlite-history.zsh
+source /home/kenzanin/.local/share/zap/plugins/zsh-histdb/libsql-history.zsh
 histdb-import-sqlite ~/.histdb/zsh-history.db
 ```
 
@@ -235,7 +224,7 @@ histdb can be configured exactly as zsh:
 **oh-my-zsh**:
 ```zsh
 source $ZSH/oh-my-zsh.sh
-source ${0:A:h}/rqlite-history.zsh
+source ${0:A:h}/libsql-history.zsh
 autoload -Uz add-zsh-hook
 bindkey '^R' histdb-fzf
 # Optional: histdb-top widget
@@ -246,13 +235,13 @@ bindkey '^[t' histdb-top-widget
 **prezto**:
 ```zsh
 source $PREZTO/runcoms/zshrc
-source ${0:A:h}/rqlite-history.zsh
+source ${0:A:h}/libsql-history.zsh
 bindkey '^R' histdb-fzf
 ```
 
 **Basic zsh**:
 ```zsh
-source ~/.local/share/zap/plugins/zsh-histdb/rqlite-history.zsh
+source ~/.local/share/zap/plugins/zsh-histdb/libsql-history.zsh
 autoload -Uz add-zsh-hook
 bindkey '^R' histdb-fzf
 ```
@@ -335,7 +324,7 @@ This will find the most frequently issued command issued exactly in this directo
 
 ## Fuzzy History Search with fzf
 
-The main interactive history search is `histdb-fzf` — a fuzzy finder over your rqlite history database. It replaces traditional reverse-isearch.
+The main interactive history search is `histdb-fzf` — a fuzzy finder over your sqld history database. It replaces traditional reverse-isearch.
 
 ### Setup
 
@@ -372,7 +361,7 @@ The fzf interface shows:
 
 ## Up/Down Prefix History Search
 
-The `_histdb-up-line-or-beginning-search` and `_histdb-down-line-or-beginning-search` widgets replace zsh's default `up-line-or-beginning-search` / `down-line-or-beginning-search`. When you type a prefix (like `ssh`) and press Up, they query the rqlite database for commands starting with that prefix, sorted by recency (current host first).
+The `_histdb-up-line-or-beginning-search` and `_histdb-down-line-or-beginning-search` widgets replace zsh's default `up-line-or-beginning-search` / `down-line-or-beginning-search`. When you type a prefix (like `ssh`) and press Up, they query the sqld database for commands starting with that prefix, sorted by recency (current host first).
 
 ### Setup
 
@@ -393,7 +382,7 @@ bindkey '^[[B' _histdb-down-line-or-beginning-search
 
 ## SQLite Extensions
 
-rqlite supports loading SQLite extensions via the `-extensions-path` flag. Prebuilt extensions enhance search and statistics:
+sqld supports loading SQLite extensions via the `--extensions-path` flag (requires `trusted.lst`). Prebuilt extensions enhance search and statistics:
 
 | Extension | Feature | Used by |
 |---|---|---|
@@ -420,25 +409,25 @@ histdb-stats
 
 ## Database schema
 
-The database lives in your rqlite cluster.
+The database lives in your sqld server.
 You can look in it easily by running `_histdb_query "sql..."`.
 
 For inspiration you can also use `histdb` with the `-d` argument and it will print the SQL it's running.
 
 ## Troubleshooting
 
-### rqlite connection issues
+### sqld connection issues
 
 If you get connection errors:
 
-1. Check if rqlite is running:
+1. Check if sqld is running:
    ```zsh
-   curl -s http://127.1.1.1:50001/status | jq
+   curl -s -o /dev/null -w "%{http_code}" http://127.100.1.2:8080/v3
    ```
 
 2. Verify the URL is correct:
    ```zsh
-   echo $HISTDB_RQLITE_URL
+   echo $HISTDB_LIBSQL_URL
    ```
 
 3. Check systemd service status:
@@ -478,7 +467,7 @@ If you get connection errors:
 
 ## Synchronising history
 
-rqlite handles synchronization automatically between nodes in the cluster.
+sqld handles data persistence automatically in standalone mode.
 There is no need for manual git-based synchronization of the database file.
 
 ## Completion

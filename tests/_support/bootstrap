@@ -1,7 +1,7 @@
 # Test setup - sourced before each test file
 
-source "${0:A:h}/../../rqlite-history.zsh"
-source "${0:A:h}/../../rqlite-history-autosuggest.zsh"
+source "${0:A:h}/../../libsql-history.zsh"
+source "${0:A:h}/../../libsql-history-autosuggest.zsh"
 
 # Source autoloaded functions for testing (normally lazy-loaded)
 source "${0:A:h}/../../functions/histdb"
@@ -54,37 +54,6 @@ _histdb_test_cleanup() {
 _histdb_query() {
     _histdb_test_init
     TEST_QUERY_COUNT=$((TEST_QUERY_COUNT + 1))
-    local separator=$'\t'
-    local header=0
-    local sql=""
-
-    local -a args
-    args=("$@")
-    local i=1
-    while (( i <= $#args )); do
-        case "${args[$i]}" in
-            -separator) separator="${args[$((i+1))]}"; i=$((i+2)) ;;
-            -header) header=1; i=$((i+1)) ;;
-            -noheader) header=0; i=$((i+1)) ;;
-            -batch) i=$((i+1)) ;;
-            -cmd) i=$((i+2)) ;;
-            *) sql="${args[$i]}"; i=$((i+1)) ;;
-        esac
-    done
-
-    [[ -z "$sql" ]] && return 0
-    [[ -z "$TEST_DB" ]] && return 0
-
-    if (( header )); then
-        sqlite3 -header -separator "$separator" "$TEST_DB" "$sql" 2>/dev/null
-    else
-        sqlite3 -separator "$separator" "$TEST_DB" "$sql" 2>/dev/null
-    fi
-}
-
-# No longer needed - _histdb_query_local was removed in rqlite-only migration
-# _histdb_query_local() {
-    _histdb_test_init
     local separator=$'\t'
     local header=0
     local sql=""
