@@ -225,18 +225,17 @@ EOF
 _histdb_addhistory() {
     local cmd="${1[0, -2]}"
     if [[ -o histignorespace && "$cmd" =~ "^ " ]]; then return 0; fi
-    if [[ ${cmd} == ${~HISTORY_IGNORE} ]]; then return 0; fi
     for boring in "${_BORING_PREFIX[@]}"; do
         if [[ "$cmd" == "$boring"* ]]; then return 0; fi
     done
 
-    local cmd="'$(sql_escape $cmd)'"
-    local pwd="'$(sql_escape ${PWD})'"
+    local cmd="'$(sql_escape "$cmd")'"
+    local pwd="'$(sql_escape "${PWD}")'"
     local started=$EPOCHSECONDS
     _histdb_init
 
     if [[ "$cmd" != "''" ]]; then
-        _histdb_query_batch <<EOF &|
+        _histdb_query_batch <<EOF
 insert into commands (argv) values (${cmd});
 insert into places   (host, dir) values (${HISTDB_HOST}, ${pwd});
 insert into history
