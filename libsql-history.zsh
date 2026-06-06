@@ -10,7 +10,7 @@ zmodload zsh/datetime
 
 autoload -U add-zsh-hook
 
-typeset -g HISTDB_LIBSQL_URL="${HISTDB_LIBSQL_URL:-http://127.100.1.2:8080}"
+typeset -g HISTDB_LIBSQL_URL="${HISTDB_LIBSQL_URL:-http://127.100.1.2:51777}"
 typeset -g HISTDB_SESSION=""
 typeset -g HISTDB_HOST=""
 typeset -g HISTDB_INSTALLED_IN="${(%):-%N}"
@@ -80,24 +80,27 @@ _histdb_query_curl() {
         -H "Content-Type: application/json" \
         -d "$body") || return 0
 
+    # Bail if response is not valid JSON (server down / wrong URL)
+    ! print -r -- "$response" | jq . >/dev/null 2>&1 && return 0
+
     # Check for pipeline/statement-level error
     local err_type err_msg
-    err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"')
+    err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"' 2>/dev/null)
     if [[ "$err_type" == "error" ]]; then
-        err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"')
+        err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"' 2>/dev/null)
         printf '%s\n' "error in ${sql}: ${err_msg}" >&2
         return
     fi
 
     # Extract result
     local result_json
-    result_json=$(print -r -- "$response" | jq '.results[0].response.result')
+    result_json=$(print -r -- "$response" | jq '.results[0].response.result' 2>/dev/null)
     [[ -z "$result_json" || "$result_json" == "null" ]] && return 0
 
     # Print header if requested
     if (( header )); then
         print -r -- "$result_json" | jq -r --arg sep "$separator" \
-            '[.cols[] | .name // ""] | join($sep)'
+            '[.cols[] | .name // ""] | join($sep)' 2>/dev/null
     fi
 
     # Print rows — convert Hrana3 Value objects to plain text
@@ -111,7 +114,7 @@ _histdb_query_curl() {
             elif .type == "blob" then .base64
             else ""
             end
-        ] | join($sep)'
+        ] | join($sep)' 2>/dev/null
 }
 
 # ------------------------------------------------------------------
@@ -138,10 +141,13 @@ _histdb_query_curl_sequence() {
         -H "Content-Type: application/json" \
         -d "$body") || return 0
 
+    # Bail if response is not valid JSON
+    ! print -r -- "$response" | jq . >/dev/null 2>&1 && return
+
     local err_type err_msg
-    err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"')
+    err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"' 2>/dev/null)
     if [[ "$err_type" == "error" ]]; then
-        err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"')
+        err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"' 2>/dev/null)
         printf '%s\n' "error in sequence: ${err_msg}" >&2
     fi
 }

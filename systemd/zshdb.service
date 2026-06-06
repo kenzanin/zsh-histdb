@@ -7,7 +7,7 @@ Type=simple
 ExecStartPre=/usr/bin/mkdir -p %h/.local/share/zshdb_data
 ExecStart=%h/.local/bin/sqld \
     -d %h/.local/share/zshdb_data/sqld.db \
-    --http-listen-addr 127.100.1.2:8080 \
+    --http-listen-addr 127.100.1.2:51777 \
     --extensions-path %h/.local/share/zap/plugins/zsh-histdb/extension
 Restart=on-failure
 RestartSec=5
