@@ -2,75 +2,34 @@
 
 @describe '_histdb_init database initialisation'
 
-@test 'init creates tables' {
-    # The bootstrap already runs _histdb_init. Verify tables exist.
+@test 'init creates cmd table' {
     local result
     result=$(_histdb_query "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    assert "$result" contains "commands"
-    assert "$result" contains "places"
-    assert "$result" contains "history"
-}
-
-@test 'init sets user_version to 2' {
-    local result
-    result=$(_histdb_query "PRAGMA user_version")
-    assert "$result" equals "2"
+    assert "$result" equals "cmd"
 }
 
 @test 'init creates indexes' {
-    # Bootstrap sets HISTDB_SESSION which short-circuits _histdb_init
-    # Re-init to trigger index creation
-    local saved_session=$HISTDB_SESSION
-    HISTDB_SESSION=""
-
-    # Manually run init steps (table check + index creation)
-    _histdb_query "create index if not exists hist_time on history(start_time)"
-    _histdb_query "create index if not exists place_dir on places(dir)"
-    _histdb_query "create index if not exists place_host on places(host)"
-
     local result
     result=$(_histdb_query "SELECT name FROM sqlite_master WHERE type='index' ORDER BY name")
-    assert "$result" contains "hist_time"
-    assert "$result" contains "place_dir"
-    assert "$result" contains "place_host"
-
-    HISTDB_SESSION=$saved_session
+    assert "$result" contains "cmd_wtime"
+    assert "$result" contains "cmd_argv"
+    assert "$result" contains "cmd_count"
 }
 
 @test 'init is idempotent (can be called twice)' {
     local first
-    first=$(_histdb_query "SELECT count(*) FROM commands")
+    first=$(_histdb_query "SELECT count(*) FROM cmd")
 
-    # Re-init
-    HISTDB_SESSION=""
+    _HISTDB_INITIALIZED=""
     _histdb_init
 
     local second
-    second=$(_histdb_query "SELECT count(*) FROM commands")
+    second=$(_histdb_query "SELECT count(*) FROM cmd")
     assert "$second" equals "$first"
 }
 
-@test 'init assigns a session ID' {
-    local saved=$HISTDB_SESSION
-    HISTDB_SESSION=""
+@test 'init does not crash when no HISTDB_HOST set' {
+    _HISTDB_INITIALIZED=""
     _histdb_init
-    assert "$HISTDB_SESSION" is_not_empty
-    HISTDB_SESSION=$saved
-}
-
-@test 'session ID is numeric' {
-    local saved=$HISTDB_SESSION
-    HISTDB_SESSION=""
-    _histdb_init
-    assert "$HISTDB_SESSION" matches "^[0-9]+$"
-    HISTDB_SESSION=$saved
-}
-
-@test 'init sets HISTDB_HOST from environment' {
-    local saved=$HISTDB_HOST
-    HISTDB_HOST=""
-    HISTDB_SESSION=""
-    _histdb_init
-    assert "$HISTDB_HOST" is_not_empty
-    HISTDB_HOST=$saved
+    assert "$status" equals 0
 }

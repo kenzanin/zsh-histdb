@@ -2,27 +2,26 @@ histdb-search() {
     _histdb_init
     local sep=$'\t'
     local use_regex=0
-    local query="SELECT argv, host, dir, strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time, duration, exit_status FROM history JOIN commands ON history.command_id = commands.id JOIN places ON history.place_id = places.id WHERE 1"
+    local query="SELECT argv, last_host as host, last_dir as dir, strftime('%Y-%m-%d %H:%M', wtime, 'unixepoch', 'localtime') as time, status FROM cmd WHERE 1"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --date=*) local d="${1#--date=}"; query="${query} AND date(datetime(history.start_time, 'unixepoch')) = '$d'" ;;
-            --exit=*) local e="${1#--exit=}"; query="${query} AND history.exit_status = $e" ;;
-            --duration=*) local d="${1#--duration=}"; query="${query} AND history.duration > $d" ;;
-            --host=*) local h="${1#--host=}"; query="${query} AND places.host = '$h'" ;;
-            --dir=*) local d="${1#--dir=}"; query="${query} AND places.dir LIKE '$d%'" ;;
+            --date=*) local d="${1#--date=}"; query="${query} AND date(datetime(wtime, 'unixepoch')) = '$d'" ;;
+            --exit=*) local e="${1#--exit=}"; query="${query} AND status = $e" ;;
+            --host=*) local h="${1#--host=}"; query="${query} AND last_host = '$h'" ;;
+            --dir=*) local d="${1#--dir=}"; query="${query} AND last_dir LIKE '$d%'" ;;
             --regex) use_regex=1 ;;
             *)
                 if (( use_regex )); then
-                    query="${query} AND commands.argv REGEXP '${1}'"
+                    query="${query} AND argv REGEXP '${1}'"
                 else
-                    query="${query} AND commands.argv LIKE '%${1}%'"
+                    query="${query} AND argv LIKE '%${1}%'"
                 fi
                 ;;
         esac
         shift
     done
 
-    query="${query} ORDER BY history.start_time DESC LIMIT 1000"
+    query="${query} ORDER BY wtime DESC LIMIT 1000"
     _histdb_query -separator "$sep" "$query" | column -t -s "$sep"
 }

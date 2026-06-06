@@ -10,9 +10,6 @@ typeset -g HISTDB_ISEARCH_THIS_DIR=0
 typeset -g HISTDB_ISEARCH_LAST_QUERY=""
 typeset -g HISTDB_ISEARCH_LAST_N=""
 
-# TODO Show more info about match (n, date, pwd, host)
-# TODO Keys to limit match?
-
 # make a keymap for histdb isearch
 bindkey -N histdb-isearch main
 
@@ -43,32 +40,27 @@ _histdb_isearch_query () {
     fi
 
     if [[ $HISTDB_ISEARCH_THIS_DIR == 1 ]]; then
-        local where_dir="and places.dir like '$(sql_escape $PWD)%'"
+        local where_dir="and last_dir like '$(sql_escape $PWD)%'"
     else
         local where_dir=""
     fi
 
-
     if [[ $HISTDB_ISEARCH_THIS_HOST == 1 ]]; then
-        local where_host="and places.host = '$(sql_escape $HOST)'"
+        local where_host="and last_host = '$(sql_escape $HOST)'"
     else
         local where_host=""
     fi
 
     local query="select
-commands.argv,
-places.dir,
-places.host,
-datetime(max(history.start_time), 'unixepoch', 'localtime')
-from history left join commands
-on history.command_id = commands.id
-left join places
-on history.place_id = places.id
-where commands.argv glob '*$(sql_escape ${BUFFER})*'
+argv,
+last_dir,
+last_host,
+datetime(wtime, 'unixepoch', 'localtime')
+from cmd
+where argv glob '*$(sql_escape ${BUFFER})*'
 ${where_host}
 ${where_dir}
-group by commands.argv, places.dir, places.host
-order by ${maxmin}(history.start_time) ${ascdesc}
+order by wtime ${ascdesc}
 limit 1
 offset ${offset}"
     local result=$(_histdb_query -separator $'\n' "$query")
@@ -147,14 +139,13 @@ _histdb-isearch () {
     _histdb_isearch_query
     _histdb_isearch_display
     zle recursive-edit; local stat=$?
-    zle -D zle-line-pre-redraw # TODO push/pop zle-line-pre-redraw and
-                               # self-insert, rather than nuking
+    zle -D zle-line-pre-redraw
 
     zle -K main
     PREDISPLAY=""
     region_highlight=()
 
-    echo -ne "\e[1 q" #box cursor
+    echo -ne "\e[1 q" # box cursor
 
     if ! (( stat )); then
         BUFFER="${HISTDB_ISEARCH_MATCH}"
@@ -167,8 +158,6 @@ _histdb-isearch () {
     return 0
 }
 
-# this will work outside histdb-isearch if you want
-# so you can recover from history and then cd afterwards
 _histdb-isearch-cd () {
     if [[ -d ${HISTDB_ISEARCH_DIR} ]]; then
         cd "${HISTDB_ISEARCH_DIR}"
@@ -209,6 +198,3 @@ bindkey -M histdb-isearch '^[j' _histdb-isearch-cd
 
 bindkey -M histdb-isearch '^[h' _histdb-isearch-toggle-host
 bindkey -M histdb-isearch '^[d' _histdb-isearch-toggle-dir
-
-# because we are using BUFFER for output, we have to reimplement
-# pretty much the whole set of buffer editing operations

@@ -1,4 +1,7 @@
 # fzf-based ZLE widgets
+#
+# Queries single `cmd` table — no JOINs, no GROUP BY.
+# Ctrl+K deletes the row from cmd (removes command entirely).
 
 histdb-fzf() {
     which fzf > /dev/null 2>&1 || {
@@ -8,18 +11,11 @@ histdb-fzf() {
     _histdb_init
 
     local sep=$'\t'
-    local query="SELECT argv, host, dir, time, MAX(duration) as duration FROM (
-        SELECT commands.argv as argv, places.host as host, places.dir as dir,
-            history.start_time as start_time,
-            strftime('%Y-%m-%d %H:%M', history.start_time, 'unixepoch', 'localtime') as time,
-            history.duration as duration,
-            CASE WHEN places.dir LIKE '$(sql_escape "$PWD")%' THEN 0 ELSE 1 END as _sort_dir
-        FROM history
-        JOIN commands ON history.command_id = commands.id
-        JOIN places ON history.place_id = places.id
-    )
-    GROUP BY argv, dir
-    ORDER BY MIN(_sort_dir), MAX(start_time) DESC
+    local query="SELECT argv, last_host as host, last_dir as dir,
+        strftime('%Y-%m-%d %H:%M', wtime, 'unixepoch', 'localtime') as time,
+        count, status
+    FROM cmd
+    ORDER BY wtime DESC
     LIMIT 2000"
 
     local output
@@ -30,7 +26,7 @@ histdb-fzf() {
             --tiebreak=index \
             --delimiter "$sep" \
             --with-nth 1 \
-            --preview "echo -e 'Directory: {3}\nTime: {4}\nDuration: {5}s' && echo "{1}" | bat --language bash --plain --color=always 2>/dev/null || true" \
+            --preview "echo -e 'Directory: {3}\nTime: {4}\nCount: {5}\nStatus: {6}' && echo "{1}" | bat --language bash --plain --color=always 2>/dev/null || true" \
             --preview-window down:6:wrap \
             --expect=ctrl-j,ctrl-r,ctrl-k \
             --query "$LBUFFER")
@@ -69,13 +65,12 @@ histdb-fzf() {
             return
             ;;
         "ctrl-k")
-            # Delete all history entries matching this command+dir
+            # Delete this command from cmd table
             local cmd_to_delete="${selection%%$sep*}"
             cmd_to_delete="${cmd_to_delete#\"}"
             cmd_to_delete="${cmd_to_delete%\"}"
-            local dir_to_delete=$(print -r -- "$selection" | cut -f3)
             if [[ -n "$cmd_to_delete" ]]; then
-                _histdb_query "DELETE FROM history WHERE id IN (SELECT h.id FROM history h JOIN commands c ON h.command_id = c.id JOIN places p ON h.place_id = p.id WHERE c.argv='$(sql_escape "$cmd_to_delete")' AND p.dir='$(sql_escape "$dir_to_delete")')" > /dev/null 2>&1
+                _histdb_query "DELETE FROM cmd WHERE argv = '$(sql_escape "$cmd_to_delete")'" > /dev/null 2>&1
                 zle -M "Deleted: $cmd_to_delete"
             fi
             ;;
@@ -96,14 +91,7 @@ zle -N histdb-fzf
 histdb-top-widget() {
     _histdb_init
     local sep=$'\t'
-    local query="SELECT argv, count FROM (
-        SELECT commands.argv as argv, count(*) as count
-        FROM history
-        JOIN commands ON history.command_id = commands.id
-        GROUP BY commands.argv
-        ORDER BY count DESC
-        LIMIT 1000
-    )"
+    local query="SELECT argv, count FROM cmd ORDER BY count DESC LIMIT 1000"
 
     local selected
     selected=$(_histdb_query -separator "$sep" "$query" |

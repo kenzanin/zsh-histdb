@@ -15,12 +15,12 @@ histdb-import-sqlite() {
 .output $temp_file
 SELECT commands.argv, places.host, places.dir, 
        history.start_time,
-       CASE WHEN history.exit_status IS NULL THEN 0 ELSE history.exit_status END,
-       CASE WHEN history.duration IS NULL THEN 0 ELSE history.duration END
+       CASE WHEN history.exit_status IS NULL THEN 0 ELSE history.exit_status END
 FROM history 
 JOIN commands ON history.command_id = commands.id 
 JOIN places ON history.place_id = places.id 
-LIMIT 10000;
+ORDER BY history.start_time
+LIMIT 100000;
 EOSQL
 
     if [[ ! -s "$temp_file" ]]; then
@@ -31,15 +31,21 @@ EOSQL
 
     echo "Importing $(wc -l < "$temp_file") records..."
     local count=0
-    while IFS=$'\t' read -r argv host dir start_time exit_status duration; do
-    local cmd_escaped=$(printf '%s' "$argv" | sed "s/'/''/g")
-    local dir_escaped=$(printf '%s' "$dir" | sed "s/'/''/g")
-        exit_status=${exit_status:-0}
-        duration=${duration:-0}
+    while IFS=$'\t' read -r argv host dir start_time status; do
+        local cmd_escaped=$(printf '%s' "$argv" | sed "s/'/''/g")
+        local dir_escaped=$(printf '%s' "$dir" | sed "s/'/''/g")
+        local host_escaped=$(printf '%s' "$host" | sed "s/'/''/g")
+        local status=${status:-0}
+        local start_time=${start_time:-0}
 
-        _histdb_query "INSERT OR IGNORE INTO commands (argv) VALUES ('$cmd_escaped');"
-        _histdb_query "INSERT OR IGNORE INTO places (host, dir) VALUES ('$host', '$dir_escaped');"
-        _histdb_query "INSERT INTO history (session, command_id, place_id, start_time, exit_status, duration) SELECT $HISTDB_SESSION, c.id, p.id, $start_time, $exit_status, $duration FROM commands c, places p WHERE c.argv='$cmd_escaped' AND p.host='$host' AND p.dir='$dir_escaped' LIMIT 1;"
+        _histdb_query "INSERT INTO cmd (argv, count, wtime, status, last_dir, last_host)
+VALUES ('$cmd_escaped', 1, $start_time, $status, '$dir_escaped', '$host_escaped')
+ON CONFLICT(argv) DO UPDATE SET
+    count = count + 1,
+    wtime = max(wtime, excluded.wtime),
+    status = excluded.status,
+    last_dir = excluded.last_dir,
+    last_host = excluded.last_host;"
 
         count=$((count + 1))
         if (( count % 100 == 0 )); then echo "Imported $count records..."; fi

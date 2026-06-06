@@ -10,9 +10,9 @@ histdb-info() {
 
     echo "Database:"
     echo "  Backend: sqld (libSQL server via Hrana3 HTTP)"
-    local total=$(_histdb_query "SELECT count(*) FROM history" 2>/dev/null)
-    local unique=$(_histdb_query "SELECT count(DISTINCT command_id) FROM history" 2>/dev/null)
-    echo "  Records: ${total:-0} history entries, ${unique:-0} unique commands"
+    local total=$(_histdb_query "SELECT count(*) FROM cmd" 2>/dev/null)
+    local unique=$(_histdb_query "SELECT count(*) FROM cmd" 2>/dev/null)
+    echo "  Records: ${total:-0} commands (${unique:-0} unique)"
     echo ""
 
     echo "sqld (server):"
@@ -83,10 +83,9 @@ histdb-info() {
 
     echo "Environment:"
     echo "  HISTDB_LIBSQL_URL: ${HISTDB_LIBSQL_URL}"
-    echo "  HISTDB_SESSION:    ${HISTDB_SESSION:-not initialized}"
-    echo "  HISTDB_HOST:       ${HISTDB_HOST:-not set}"
+    echo "  HISTDB_HOST:       ${HISTDB_HOST:-from \$HOST}"
     echo ""
 
     echo "Manual queries:"
-    echo "  curl -s -X POST \"$HISTDB_LIBSQL_URL/v3/pipeline\" -H \"Content-Type: application/json\" -d '{\"baton\":null,\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":\"SELECT argv FROM commands LIMIT 5\",\"args\":[]}}]}' | jq ."
+    echo "  curl -s -X POST \"$HISTDB_LIBSQL_URL/v3/pipeline\" -H \"Content-Type: application/json\" -d '{\"baton\":null,\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":\"SELECT argv FROM cmd LIMIT 5\",\"args\":[]}}]}' | jq ."
 }

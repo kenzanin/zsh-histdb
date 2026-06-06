@@ -1,7 +1,7 @@
 # libsql-history.zsh — Core engine for zsh-histdb with sqld (libsql) via Hrana3
 #
-# Uses sqld's Hrana3 over HTTP (POST /v3/pipeline) for all SQL operations.
-# Replaces the old rqlite HTTP API transport with Hrana3 over HTTP.
+# Schema: single `cmd` table with (argv, count, wtime, status, last_dir, last_host)
+# One row per unique command. No history table, no sessions, no JOINs.
 
 which curl >/dev/null 2>&1 || return
 which jq >/dev/null 2>&1 || return
@@ -11,8 +11,7 @@ zmodload zsh/datetime
 autoload -U add-zsh-hook
 
 typeset -g HISTDB_LIBSQL_URL="${HISTDB_LIBSQL_URL:-http://127.100.1.2:51777}"
-typeset -g HISTDB_SESSION=""
-typeset -g HISTDB_HOST=""
+typeset -g HISTDB_HOST="${HISTDB_HOST:-${HOST}}"
 typeset -g HISTDB_INSTALLED_IN="${(%):-%N}"
 
 sql_escape() {
@@ -21,8 +20,6 @@ sql_escape() {
 
 # ------------------------------------------------------------------
 # _histdb_query — Central dispatcher for SQL statements
-#   Parses common flags, then delegates to _histdb_query_curl.
-#   Signature matches the old interface so all callers work unchanged.
 # ------------------------------------------------------------------
 _histdb_query() {
     local url="${HISTDB_LIBSQL_URL}"
@@ -57,10 +54,6 @@ _histdb_query() {
 
 # ------------------------------------------------------------------
 # _histdb_query_curl — Single-statement Hrana3 execute via POST /v3/pipeline
-#
-# Sends one execute request and parses the result.
-# Outputs tab-separated rows (and optional header) matching the old format.
-# Errors go to stderr, nothing on stdout for mutations.
 # ------------------------------------------------------------------
 _histdb_query_curl() {
     local sql="$1" separator="$2" header="$3"
@@ -80,10 +73,8 @@ _histdb_query_curl() {
         -H "Content-Type: application/json" \
         -d "$body") || return 0
 
-    # Bail if response is not valid JSON (server down / wrong URL)
     ! print -r -- "$response" | jq . >/dev/null 2>&1 && return 0
 
-    # Check for pipeline/statement-level error
     local err_type err_msg
     err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"' 2>/dev/null)
     if [[ "$err_type" == "error" ]]; then
@@ -92,18 +83,15 @@ _histdb_query_curl() {
         return
     fi
 
-    # Extract result
     local result_json
     result_json=$(print -r -- "$response" | jq '.results[0].response.result' 2>/dev/null)
     [[ -z "$result_json" || "$result_json" == "null" ]] && return 0
 
-    # Print header if requested
     if (( header )); then
         print -r -- "$result_json" | jq -r --arg sep "$separator" \
             '[.cols[] | .name // ""] | join($sep)' 2>/dev/null
     fi
 
-    # Print rows — convert Hrana3 Value objects to plain text
     print -r -- "$result_json" | jq -r --arg sep "$separator" '
         .rows[] | [
             .[] |
@@ -119,9 +107,6 @@ _histdb_query_curl() {
 
 # ------------------------------------------------------------------
 # _histdb_query_curl_sequence — Multi-statement Hrana3 sequence request
-#
-# For batch operations (multiple semicolon-separated SQLs).
-# Rows are ignored — only error checking.
 # ------------------------------------------------------------------
 _histdb_query_curl_sequence() {
     local sql="$1"
@@ -141,7 +126,6 @@ _histdb_query_curl_sequence() {
         -H "Content-Type: application/json" \
         -d "$body") || return 0
 
-    # Bail if response is not valid JSON
     ! print -r -- "$response" | jq . >/dev/null 2>&1 && return
 
     local err_type err_msg
@@ -154,7 +138,6 @@ _histdb_query_curl_sequence() {
 
 # ------------------------------------------------------------------
 # _histdb_query_batch — Batch operation (reads SQL from stdin)
-#   Delegates to _histdb_query_curl_sequence for multi-statement support.
 # ------------------------------------------------------------------
 _histdb_query_batch() {
     local sql
@@ -165,39 +148,26 @@ _histdb_query_batch() {
 
 # ------------------------------------------------------------------
 # _histdb_init — Idempotent database initialisation
+#   Creates single `cmd` table if missing + indexes.
 # ------------------------------------------------------------------
+typeset -g _HISTDB_INITIALIZED=""
+
 _histdb_init() {
-    [[ -n "${HISTDB_SESSION}" ]] && return
+    [[ -n "$_HISTDB_INITIALIZED" ]] && return
 
-    local exists=$(_histdb_query "SELECT name FROM sqlite_master WHERE type='table' AND name='history'")
-    if [[ -z "$exists" ]]; then
-        _histdb_query <<-EOF
-create table commands (id integer primary key autoincrement, argv text, unique(argv) on conflict ignore);
-create table places   (id integer primary key autoincrement, host text, dir text, unique(host, dir) on conflict ignore);
-create table history  (id integer primary key autoincrement,
-                       session int,
-                       command_id int references commands (id),
-                       place_id int references places (id),
-                       exit_status int,
-                       start_time int,
-                       duration int);
-PRAGMA user_version = 2;
-EOF
-    fi
+    _histdb_query "CREATE TABLE IF NOT EXISTS cmd (
+        argv TEXT UNIQUE,
+        count INT DEFAULT 1,
+        wtime INT,
+        status INT,
+        last_dir TEXT,
+        last_host TEXT
+    )"
+    _histdb_query "CREATE INDEX IF NOT EXISTS cmd_wtime ON cmd(wtime)"
+    _histdb_query "CREATE INDEX IF NOT EXISTS cmd_argv ON cmd(argv)"
+    _histdb_query "CREATE INDEX IF NOT EXISTS cmd_count ON cmd(count)"
 
-    if [[ -z "${HISTDB_SESSION}" ]]; then
-        HISTDB_HOST=${HISTDB_HOST:-"'$(sql_escape ${HOST})'"}
-        HISTDB_SESSION=$(_histdb_query "select 1+max(session) from history inner join places on places.id=history.place_id where places.host = ${HISTDB_HOST}")
-        HISTDB_SESSION="${HISTDB_SESSION:-0}"
-        readonly HISTDB_SESSION
-    fi
-
-    _histdb_query "create index if not exists hist_time on history(start_time)"
-    _histdb_query "create index if not exists place_dir on places(dir)"
-    _histdb_query "create index if not exists place_host on places(host)"
-    _histdb_query "create index if not exists history_command_place on history(command_id, place_id)"
-    _histdb_query "create index if not exists hist_time_cmd on history(start_time DESC, command_id)"
-    _histdb_query "create index if not exists hist_time_place on history(start_time DESC, place_id)"
+    _HISTDB_INITIALIZED=1
 }
 
 typeset -ga _BORING_PREFIX
@@ -208,53 +178,54 @@ if [[ -z "${HISTDB_TABULATE_CMD[*]:-}" ]]; then
     HISTDB_TABULATE_CMD=(column -t -s $'\x1f')
 fi
 
-_histdb_update_outcome() {
-    local retval=$?
-    local finished=$EPOCHSECONDS
-    [[ -z "${HISTDB_SESSION}" ]] && return
-    _histdb_query_batch <<EOF &|
-update history set
-      exit_status = ${retval},
-      duration = ${finished} - start_time
-where id = (select max(id) from history) and
-      session = ${HISTDB_SESSION} and
-      exit_status is NULL;
-EOF
-}
+# ------------------------------------------------------------------
+# _histdb_addhistory — zshaddhistory hook (runs BEFORE command executes)
+#   UPSERT into cmd: increments count, updates wtime/dir/host.
+# ------------------------------------------------------------------
+typeset -g _HISTDB_LAST_CMD=""
 
 _histdb_addhistory() {
     local cmd="${1[0, -2]}"
-    if [[ -o histignorespace && "$cmd" =~ "^ " ]]; then return 0; fi
+    if [[ -o histignorespace && "$cmd" =~ "^ " ]]; then
+        _HISTDB_LAST_CMD=""
+        return 0
+    fi
     for boring in "${_BORING_PREFIX[@]}"; do
-        if [[ "$cmd" == "$boring"* ]]; then return 0; fi
+        if [[ "$cmd" == "$boring"* ]]; then
+            _HISTDB_LAST_CMD=""
+            return 0
+        fi
     done
 
-    local cmd="'$(sql_escape "$cmd")'"
-    local pwd="'$(sql_escape "${PWD}")'"
+    _HISTDB_LAST_CMD="$cmd"
     local started=$EPOCHSECONDS
     _histdb_init
 
-    if [[ "$cmd" != "''" ]]; then
+    if [[ -n "$cmd" ]]; then
         _histdb_query_batch <<EOF
-insert into commands (argv) values (${cmd});
-insert into places   (host, dir) values (${HISTDB_HOST}, ${pwd});
-insert into history
-  (session, command_id, place_id, start_time)
-select
-  ${HISTDB_SESSION},
-  commands.id,
-  places.id,
-  ${started}
-from
-  commands, places
-where
-  commands.argv = ${cmd} and
-  places.host = ${HISTDB_HOST} and
-  places.dir = ${pwd}
-;
+INSERT INTO cmd (argv, count, wtime, last_dir, last_host)
+VALUES ('$(sql_escape "$cmd")', 1, ${started}, '$(sql_escape "${PWD}")', '$(sql_escape "${HOST}")')
+ON CONFLICT(argv) DO UPDATE SET
+    count = count + 1,
+    wtime = excluded.wtime,
+    last_dir = excluded.last_dir,
+    last_host = excluded.last_host;
 EOF
     fi
     return 0
+}
+
+# ------------------------------------------------------------------
+# _histdb_update_outcome — precmd hook (runs AFTER command finishes)
+#   Updates exit status for the last command.
+# ------------------------------------------------------------------
+_histdb_update_outcome() {
+    local retval=$?
+    [[ -z "$_HISTDB_LAST_CMD" ]] && return
+    _histdb_query_batch <<EOF
+UPDATE cmd SET status = ${retval}
+WHERE argv = '$(sql_escape "$_HISTDB_LAST_CMD")';
+EOF
 }
 
 add-zsh-hook zshaddhistory _histdb_addhistory
@@ -262,10 +233,9 @@ add-zsh-hook precmd _histdb_update_outcome
 
 # ============================================================
 # Up/Down prefix search via histdb
-# Replaces zsh's up-line-or-beginning-search / down-line-or-beginning-search
-# Bind with:
-#   bindkey '^[[A' _histdb-up-line-or-beginning-search
-#   bindkey '^[[B' _histdb-down-line-or-beginning-search
+#   Bind with:
+#     bindkey '^[[A' _histdb-up-line-or-beginning-search
+#     bindkey '^[[B' _histdb-down-line-or-beginning-search
 # ============================================================
 typeset -g HISTDB_PREFIX_QUERY=""
 typeset -ga HISTDB_PREFIX_RESULTS
@@ -291,21 +261,14 @@ _histdb-up-line-or-beginning-search() {
 
     local sql
     if [[ -z "$prefix" ]]; then
-        sql="SELECT commands.argv FROM history
-             JOIN commands ON history.command_id = commands.id
-             JOIN places ON history.place_id = places.id
-             WHERE places.host = '$(sql_escape $HOST)'
-             GROUP BY commands.argv
-             ORDER BY MAX(history.start_time) DESC
+        sql="SELECT argv FROM cmd
+             WHERE last_host = '$(sql_escape ${HOST})'
+             ORDER BY wtime DESC
              LIMIT 2000"
     else
-        sql="SELECT commands.argv FROM history
-             JOIN commands ON history.command_id = commands.id
-             JOIN places ON history.place_id = places.id
-             WHERE commands.argv LIKE '$(sql_escape "$prefix")%'
-             GROUP BY commands.argv
-             ORDER BY MAX(CASE WHEN places.host = '$(sql_escape "$HOST")' THEN 1 ELSE 0 END) DESC,
-                      MAX(history.start_time) DESC
+        sql="SELECT argv FROM cmd
+             WHERE argv LIKE '$(sql_escape "$prefix")%'
+             ORDER BY wtime DESC
              LIMIT 2000"
     fi
 

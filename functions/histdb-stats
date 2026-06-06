@@ -3,25 +3,25 @@ histdb-stats() {
     echo "=== History Statistics ==="
     echo ""
 
-    local total=$(_histdb_query "SELECT count(*) FROM history")
-    echo "Total history entries: $total"
+    local total=$(_histdb_query "SELECT count(*) FROM cmd")
+    echo "Total entries: $total"
 
-    local unique=$(_histdb_query "SELECT count(DISTINCT command_id) FROM history")
+    local unique=$(_histdb_query "SELECT count(*) FROM cmd")
     echo "Unique commands: $unique"
 
     echo ""
     echo "Most active hosts:"
-    _histdb_query -separator $'\t' -header "SELECT places.host, count(*) as count FROM history JOIN places ON history.place_id = places.id GROUP BY places.host ORDER BY count DESC LIMIT 5"
+    _histdb_query -separator $'\t' -header "SELECT last_host as host, count(*) as count FROM cmd GROUP BY last_host ORDER BY count DESC LIMIT 5"
 
     echo ""
     echo "Most active directories:"
-    _histdb_query -separator $'\t' -header "SELECT places.dir, count(*) as count FROM history JOIN places ON history.place_id = places.id GROUP BY places.dir ORDER BY count DESC LIMIT 5"
+    _histdb_query -separator $'\t' -header "SELECT last_dir as dir, count(*) as count FROM cmd GROUP BY last_dir ORDER BY count DESC LIMIT 5"
 
     echo ""
-    echo "Command duration (seconds):"
-    _histdb_query -separator $'\t' -header "SELECT avg(duration) as avg, median(duration) as median, percentile(duration, 95) as p95, percentile(duration, 99) as p99, max(duration) as max FROM history WHERE duration > 0"
+    echo "Command usage (count distribution):"
+    _histdb_query -separator $'\t' -header "SELECT avg(count) as avg, max(count) as max, sum(count) as total FROM cmd WHERE count > 0"
 
     echo ""
     echo "Most active hours:"
-    _histdb_query -separator $'\t' -header "SELECT strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) as hour, count(*) as count FROM history GROUP BY hour ORDER BY count DESC LIMIT 5"
+    _histdb_query -separator $'\t' -header "SELECT strftime('%H', datetime(wtime, 'unixepoch', 'localtime')) as hour, count(*) as count FROM cmd GROUP BY hour ORDER BY count DESC LIMIT 5"
 }
