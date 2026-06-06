@@ -12,3 +12,9 @@ source "${0:A:h}/libsql-history-autosuggest.zsh"
 # Autoloaded functions: loaded on first use (not at shell startup)
 fpath+=( "${0:A:h}/functions" )
 autoload -Uz histdb histdb-top histdb-sync histdb-stats histdb-export histdb-merge histdb-search histdb-import-sqlite histdb-dedup histdb-info
+
+# Bind arrow keys to histdb-backed up/down widget
+bindkey '^[[A' _histdb-up-line-or-beginning-search
+bindkey '^[[B' _histdb-down-line-or-beginning-search
+bindkey '^[OA' _histdb-up-line-or-beginning-search
+bindkey '^[OB' _histdb-down-line-or-beginning-search
