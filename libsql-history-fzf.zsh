@@ -15,7 +15,10 @@ histdb-fzf() {
         strftime('%Y-%m-%d %H:%M', wtime, 'unixepoch', 'localtime') as time,
         count, status
     FROM cmd
-    ORDER BY wtime DESC
+    ORDER BY
+        CASE WHEN last_dir = '$(sql_escape "${PWD}")' THEN 0 ELSE 1 END,
+        CASE WHEN wtime >= strftime('%s', 'now', 'start of day') THEN 0 ELSE 1 END,
+        count DESC
     LIMIT 2000"
 
     local output
