@@ -10,7 +10,7 @@ histdb-merge() {
     echo "Merging from $source_url..."
 
     local temp_file=$(mktemp)
-    local body='{"baton":null,"requests":[{"type":"execute","stmt":{"sql":"SELECT argv, host, dir, start_time, exit_status, duration FROM history JOIN commands ON history.command_id = commands.id JOIN places ON history.place_id = places.id LIMIT 10000","args":[],"want_rows":true}}]}'
+    local body='{"baton":null,"requests":[{"type":"execute","stmt":{"sql":"SELECT argv, last_host, last_dir, wtime, status, count FROM cmd LIMIT 100000","args":[],"want_rows":true}}]}'
 
     curl -s -X POST "${source_url}/v3/pipeline" \
         -H "Content-Type: application/json" \
@@ -23,7 +23,27 @@ histdb-merge() {
         return 1
     fi
 
-    echo "Importing $(wc -l < "$temp_file") entries..."
+    local total=$(wc -l < "$temp_file")
+    echo "Merging $total entries..."
+    local count=0
+    while IFS=$'\t' read -r argv host dir wtime status cnt; do
+        local argv_escaped=$(printf '%s' "$argv" | sed "s/'/''/g")
+        local dir_escaped=$(printf '%s' "$dir" | sed "s/'/''/g")
+        local host_escaped=$(printf '%s' "$host" | sed "s/'/''/g")
+        status=${status:-0}
+        wtime=${wtime:-0}
+        cnt=${cnt:-1}
+
+        _histdb_query "INSERT INTO cmd (argv, count, wtime, status, last_dir, last_host)
+VALUES ('$argv_escaped', $cnt, $wtime, $status, '$dir_escaped', '$host_escaped')
+ON CONFLICT(argv) DO UPDATE SET
+    count = count + $cnt,
+    wtime = max(wtime, excluded.wtime);"
+
+        count=$((count + 1))
+        if (( count % 100 == 0 )); then echo "  Merged $count..."; fi
+    done < "$temp_file"
+
     rm -f "$temp_file"
-    echo "Merge complete (basic implementation)"
+    echo "Merge complete: $count entries merged"
 }
