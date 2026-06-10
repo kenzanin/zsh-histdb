@@ -228,7 +228,7 @@ typeset -gi HISTDB_PREFIX_INDEX=-1
 _histdb-up-line-or-beginning-search() {
     local prefix="$BUFFER"
 
-    if (( ${#HISTDB_PREFIX_RESULTS[@]} > 0 )) && [[ "$prefix" == "$HISTDB_PREFIX_QUERY"* ]]; then
+    if [[ -n "$prefix" ]] && (( ${#HISTDB_PREFIX_RESULTS[@]} > 0 )) && [[ "$prefix" == "$HISTDB_PREFIX_QUERY"* ]]; then
         local n=$(( ${#HISTDB_PREFIX_RESULTS[@]} - 1 ))
         (( HISTDB_PREFIX_INDEX < n )) && HISTDB_PREFIX_INDEX=$(( HISTDB_PREFIX_INDEX + 1 )) || HISTDB_PREFIX_INDEX=0
         BUFFER="${HISTDB_PREFIX_RESULTS[$((HISTDB_PREFIX_INDEX + 1))]}"
