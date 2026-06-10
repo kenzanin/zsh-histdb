@@ -60,7 +60,7 @@ from cmd
 where argv glob '*$(sql_escape ${BUFFER})*'
 ${where_host}
 ${where_dir}
-order by wtime ${ascdesc}
+order by wtime ${ascdesc}, rowid ${ascdesc}
 limit 1
 offset ${offset}"
     local result=$(_histdb_query -separator $'\n' "$query")

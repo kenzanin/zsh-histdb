@@ -3,6 +3,13 @@
 # Schema: single `cmd` table with (argv, count, wtime, status, last_dir, last_host)
 # One row per unique command. No history table, no sessions, no JOINs.
 
+# Load shared helpers first (guard _histdb_shared_loaded avoids double-source)
+typeset -g _histdb_shared_loaded=${_histdb_shared_loaded:-0}
+if (( ! _histdb_shared_loaded )); then
+    source "${0:A:h}/libsql-history-shared.zsh"
+    _histdb_shared_loaded=1
+fi
+
 which curl >/dev/null 2>&1 || return
 which jq >/dev/null 2>&1 || return
 
@@ -57,9 +64,8 @@ _histdb_query() {
 # ------------------------------------------------------------------
 _histdb_query_curl() {
     local sql="$1" separator="$2" header="$3"
-    local url="${HISTDB_LIBSQL_URL}/v3/pipeline"
 
-    local body response
+    local body
     body=$(jq -n \
         --arg sql "$sql" \
         '{
@@ -69,19 +75,9 @@ _histdb_query_curl() {
             ]
         }') || return 0
 
-    response=$(curl -s -X POST "$url" \
-        -H "Content-Type: application/json" \
-        -d "$body") || return 0
-
-    ! print -r -- "$response" | jq . >/dev/null 2>&1 && return 0
-
-    local err_type err_msg
-    err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"' 2>/dev/null)
-    if [[ "$err_type" == "error" ]]; then
-        err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"' 2>/dev/null)
-        printf '%s\n' "error in ${sql}: ${err_msg}" >&2
-        return
-    fi
+    local response
+    response=$(_histdb_curl_send "$body" "${sql}") || return 0
+    [[ -z "$response" ]] && return 0
 
     local result_json
     result_json=$(print -r -- "$response" | jq '.results[0].response.result' 2>/dev/null)
@@ -110,9 +106,8 @@ _histdb_query_curl() {
 # ------------------------------------------------------------------
 _histdb_query_curl_sequence() {
     local sql="$1"
-    local url="${HISTDB_LIBSQL_URL}/v3/pipeline"
 
-    local body response
+    local body
     body=$(jq -n \
         --arg sql "$sql" \
         '{
@@ -122,18 +117,7 @@ _histdb_query_curl_sequence() {
             ]
         }') || return 0
 
-    response=$(curl -s -X POST "$url" \
-        -H "Content-Type: application/json" \
-        -d "$body") || return 0
-
-    ! print -r -- "$response" | jq . >/dev/null 2>&1 && return
-
-    local err_type err_msg
-    err_type=$(print -r -- "$response" | jq -r '.results[0].type // "ok"' 2>/dev/null)
-    if [[ "$err_type" == "error" ]]; then
-        err_msg=$(print -r -- "$response" | jq -r '.results[0].error.message // "unknown error"' 2>/dev/null)
-        printf '%s\n' "error in sequence: ${err_msg}" >&2
-    fi
+    _histdb_curl_send "$body" "sequence" >/dev/null
 }
 
 # ------------------------------------------------------------------
@@ -263,12 +247,12 @@ _histdb-up-line-or-beginning-search() {
     if [[ -z "$prefix" ]]; then
         sql="SELECT argv FROM cmd
              WHERE last_host = '$(sql_escape ${HOST})'
-             ORDER BY wtime DESC
+             $(_histdb_order_sort)
              LIMIT 2000"
     else
         sql="SELECT argv FROM cmd
              WHERE argv LIKE '$(sql_escape "$prefix")%'
-             ORDER BY wtime DESC
+             $(_histdb_order_sort)
              LIMIT 2000"
     fi
 

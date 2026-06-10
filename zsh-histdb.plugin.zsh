@@ -1,5 +1,8 @@
 # zsh-histdb plugin entry point
 
+# Shared helpers: loaded first (used by core, fzf, etc.)
+source "${0:A:h}/libsql-history-shared.zsh"
+
 # Core: always loaded (query, init, hooks)
 source "${0:A:h}/libsql-history.zsh"
 

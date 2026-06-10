@@ -15,10 +15,7 @@ histdb-fzf() {
         strftime('%Y-%m-%d %H:%M', wtime, 'unixepoch', 'localtime') as time,
         count, status
     FROM cmd
-    ORDER BY
-        CASE WHEN last_dir = '$(sql_escape "${PWD}")' THEN 0 ELSE 1 END,
-        CASE WHEN wtime >= strftime('%s', 'now', 'start of day') THEN 0 ELSE 1 END,
-        count DESC
+    $(_histdb_order_sort)
     LIMIT 2000"
 
     local output
@@ -53,35 +50,28 @@ histdb-fzf() {
     if [[ -n "$selection" ]]; then
         case "$key" in
         "ctrl-j")
-            local dir=$(printf '%s' "$selection" | cut -f3)
+            local dir
+            dir=$(_histdb_fzf_extract_field "$selection" "$sep" 3)
             if [[ -n "$dir" && -d "$dir" ]]; then
                 cd "$dir" || return
             fi
             LBUFFER=""
             ;;
         "ctrl-r")
-            local cmd="${selection%%$sep*}"
-            cmd="${cmd#\"}"
-            cmd="${cmd%\"}"
-            LBUFFER="$cmd"
+            LBUFFER="$(_histdb_fzf_extract_cmd "$selection" "$sep")"
             histdb-fzf
             return
             ;;
         "ctrl-k")
-            # Delete this command from cmd table
-            local cmd_to_delete="${selection%%$sep*}"
-            cmd_to_delete="${cmd_to_delete#\"}"
-            cmd_to_delete="${cmd_to_delete%\"}"
+            local cmd_to_delete
+            cmd_to_delete=$(_histdb_fzf_extract_cmd "$selection" "$sep")
             if [[ -n "$cmd_to_delete" ]]; then
                 _histdb_query "DELETE FROM cmd WHERE argv = '$(sql_escape "$cmd_to_delete")'" > /dev/null 2>&1
                 zle -M "Deleted: $cmd_to_delete"
             fi
             ;;
         *)
-            local cmd="${selection%%$sep*}"
-            cmd="${cmd#\"}"
-            cmd="${cmd%\"}"
-            LBUFFER="$cmd"
+            LBUFFER="$(_histdb_fzf_extract_cmd "$selection" "$sep")"
             ;;
         esac
     fi
@@ -107,10 +97,7 @@ histdb-top-widget() {
             --query "$LBUFFER")
 
     if [[ -n "$selected" ]]; then
-        local cmd="${selected%%$sep*}"
-        cmd="${cmd#\"}"
-        cmd="${cmd%\"}"
-        LBUFFER="$cmd"
+        LBUFFER="$(_histdb_fzf_extract_cmd "$selected" "$sep")"
     fi
     zle reset-prompt
     return 0
