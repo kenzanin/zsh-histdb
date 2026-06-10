@@ -3,24 +3,34 @@ histdb-top() {
     local sep=$'\x1f'
     local field
     local order="desc"
-    local mode="${1:-cmd}"
-    shift
-    for arg in "$@"; do
-        case "$arg" in
+    local mode="cmd"
+    local -a opts
+
+    zparseopts -E -D -a opts \
+        -desc -asc 2>/dev/null
+
+    for opt in "${opts[@]}"; do
+        case "$opt" in
             --desc) order="desc" ;;
             --asc)  order="asc"  ;;
         esac
     done
 
+    [[ -n "$1" ]] && mode="$1"
+
     case "$mode" in
         dir) field="last_dir" ;;
         cmd) field="argv" ;;
+        *)
+            echo "usage: histdb-top [--desc|--asc] [cmd|dir]" >&2
+            return 1
+            ;;
     esac
 
     _histdb_query -separator "$sep" -header \
         "select count, last_host as host, replace($field, '
 ', '
-$sep$sep') as $mode from cmd
+$sep$sep') as ${mode} from cmd
          where last_host = '$(sql_escape ${HOST})'
          $(_histdb_order_sort)" | \
         "${HISTDB_TABULATE_CMD[@]}"
