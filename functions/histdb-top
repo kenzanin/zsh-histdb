@@ -8,6 +8,7 @@ histdb-top() {
     for arg in "$@"; do
         case "$arg" in
             --desc) order="desc" ;;
+            --asc)  order="asc"  ;;
         esac
     done
 
@@ -19,6 +20,8 @@ histdb-top() {
     _histdb_query -separator "$sep" -header \
         "select count, last_host as host, replace($field, '
 ', '
-$sep$sep') as $mode from cmd order by count $order" | \
+$sep$sep') as $mode from cmd
+         where last_host = '$(sql_escape ${HOST})'
+         $(_histdb_order_sort)" | \
         "${HISTDB_TABULATE_CMD[@]}"
 }
