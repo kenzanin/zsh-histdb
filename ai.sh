@@ -1,0 +1,3 @@
+
+
+herdr --session zsh-histdb "$@"

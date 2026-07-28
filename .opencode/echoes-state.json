@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "pluginVersion": "1.2.0",
+  "initialized": false,
+  "session": {
+    "started": false,
+    "saved": false,
+    "lastStart": null,
+    "lastSave": null
+  },
+  "stats": {
+    "totalPages": 0,
+    "totalDailyLogs": 1,
+    "deprecatedPages": 0
+  }
+}

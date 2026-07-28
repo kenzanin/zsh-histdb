@@ -49,10 +49,10 @@ histdb-info() {
     else
         echo "  jq:      Not installed"
     fi
-    if which fzf >/dev/null 2>&1; then
-        echo "  fzf:     $(fzf --version 2>&1)"
+    if which peco >/dev/null 2>&1; then
+        echo "  peco:    $(peco --version 2>&1)"
     else
-        echo "  fzf:     Not installed (histdb-fzf won't work)"
+        echo "  peco:    Not installed (histdb-peco won't work)"
     fi
     if which bat >/dev/null 2>&1; then
         echo "  bat:     $(bat --version 2>&1)"

@@ -10,7 +10,7 @@ Fork of [larkery/zsh-histdb](https://github.com/larkery/zsh-histdb) by Tom Hinto
 zsh-histdb/
 ├── zsh-histdb.plugin.zsh              # Entry point (sources all other files)
 ├── libsql-history.zsh                  # Core engine (always loaded)
-├── libsql-history-fzf.zsh              # fzf ZLE widgets
+├── libsql-history-peco.zsh # peco ZLE widgets
 ├── libsql-history-autosuggest.zsh      # zsh-autosuggestions integration
 ├── functions/                          # Autoloaded CLI functions (faster startup)
 │   ├── histdb                         # Query history with filters
@@ -56,9 +56,9 @@ history  (id INTEGER PK, session INT, command_id FK, place_id FK,
 | Pattern | SQL | Used By |
 |---------|-----|---------|
 | Prefix LIKE | `WHERE argv LIKE 'prefix%'` | Up/Down, autosuggest |
-| Group by argv | `GROUP BY argv ORDER BY MAX(start_time) DESC` | Up/Down, fzf |
+| Group by argv | `GROUP BY argv ORDER BY MAX(start_time) DESC` | Up/Down, peco |
 | Current host first | `ORDER BY MAX(CASE WHEN host='X'...` | Up/Down |
-| Current dir first | `ORDER BY CASE WHEN dir LIKE 'PWD%'...` | fzf |
+| Current dir first | `ORDER BY CASE WHEN dir LIKE 'PWD%'...` | peco |
 
 ## Bug Fix: Up Arrow Caching (2026-06-03)
 
@@ -89,7 +89,7 @@ Changed the gate from "is the query string non-empty?" to **"do we have cached r
 - **Extensions:** 14 SQLite extensions loaded via `trusted.lst` (regexp, stats, fuzzy, uuid, etc.)
 
 ## Key Bindings (configured in `.zshrc`)
-- **Ctrl+R** — `histdb-fzf` (fuzzy interactive history search)
+- **Ctrl+R** — `histdb-peco` (fuzzy interactive history search)
 - **Up arrow** — `_histdb-up-line-or-beginning-search` (prefix-based history cycling)
 - **Down arrow** — `_histdb-down-line-or-beginning-search` (cycle back)
 
