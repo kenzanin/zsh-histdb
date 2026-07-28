@@ -3,7 +3,7 @@
 # Extracted duplicate patterns:
 #   - curl Hrana3 request pipeline (POST + validate + error check)
 #   - ORDER BY sort fragment (dir-first → wtime → count → rowid)
-#   - peco tab-separated output parsing
+#   - skim tab-separated output parsing
 
 # ------------------------------------------------------------------
 # _histdb_curl_send — POST JSON body to Hrana3 pipeline, validate, check errors
@@ -58,12 +58,12 @@ _histdb_order_sort() {
 }
 
 # ------------------------------------------------------------------
-# _histdb_peco_extract_cmd — Extract command from peco tab-separated output
+# _histdb_skim_extract_cmd — Extract command from skim tab-separated output
 #
 # Lines have tab-separated fields. First field is argv (quoted from SQL).
 # Strips surrounding quotes.
 # ------------------------------------------------------------------
-_histdb_peco_extract_cmd() {
+_histdb_skim_extract_cmd() {
     local selection="$1" sep="$2"
     local cmd="${selection%%$sep*}"
     cmd="${cmd#\"}"
@@ -72,9 +72,9 @@ _histdb_peco_extract_cmd() {
 }
 
 # ------------------------------------------------------------------
-# _histdb_peco_extract_field — Extract Nth field (1-based) from peco output
+# _histdb_skim_extract_field — Extract Nth field (1-based) from skim output
 # ------------------------------------------------------------------
-_histdb_peco_extract_field() {
+_histdb_skim_extract_field() {
     local selection="$1" sep="$2" field="$3"
     local i=1 part="$selection"
     while (( i < field )); do

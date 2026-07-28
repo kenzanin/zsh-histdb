@@ -1,13 +1,13 @@
 # zsh-histdb plugin entry point
 
-# Shared helpers: loaded first (used by core, peco, etc.)
+# Shared helpers: loaded first (used by core, skim, etc.)
 source "${0:A:h}/libsql-history-shared.zsh"
 
 # Core: always loaded (query, init, hooks)
 source "${0:A:h}/libsql-history.zsh"
 
-# Peco ZLE widgets: always loaded (needs zle -N at source time)
-source "${0:A:h}/libsql-history-peco.zsh"
+# Skim ZLE widgets: always loaded (needs zle -N at source time)
+source "${0:A:h}/libsql-history-skim.zsh"
 
 # Autosuggest integration: always loaded (needs to be available for ZSH_AUTOSUGGEST_STRATEGY)
 source "${0:A:h}/libsql-history-autosuggest.zsh"

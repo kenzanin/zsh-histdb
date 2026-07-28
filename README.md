@@ -8,7 +8,7 @@
 
 - **04/06/26**: Added `histdb-info` diagnostics, `histdb-dedup` dedup, sqlean extensions (regexp, stats, etc.), covering indexes on `start_time`, `--regex` search flag, Ctrl-K delete shortcut. Plugin now bundles 14 SQLite extensions in `extension/`.
 
-- **04/05/26**: Added fuzzy history search with `histdb-peco` function (requires peco). Supports Enter to select commands and shows command metadata inline.
+- **04/05/26**: Added fuzzy history search with `histdb-skim` function (requires skim). Supports Enter to select commands with preview window, directory picker (Ctrl-J), and multi-key bindings.
 
 ## What is this
 
@@ -35,7 +35,7 @@ This plugin is ~90% AI-generated. I'm the human in the loop with an obsession fo
 ```
 zsh-histdb/
 ├── libsql-history.zsh              # Core (always loaded): query, init, hooks
-├── libsql-history-peco.zsh         # ZLE widgets: histdb-peco, histdb-top-widget
+├── libsql-history-skim.zsh         # ZLE widgets: histdb-skim, histdb-top-widget
 ├── libsql-history-autosuggest.zsh  # zsh-autosuggestions integration
 ├── extension/                      # SQLite extensions (sqlean: regexp, stats, ...)
 ├── functions/                      # Autoloaded on first use (faster startup)
@@ -82,7 +82,7 @@ which sqld      # → /home/kenzanin/.local/bin/sqld
 histdb-info
 ```
 
-Shows full system status: plugin path, database records, sqld version/port/status, installed client tools (curl, jq, peco, bat), loaded SQLite extensions, and environment variables.
+Shows full system status: plugin path, database records, sqld version/port/status, installed client tools (curl, jq, sk, bat), loaded SQLite extensions, and environment variables.
 
 ### History Statistics
 
@@ -107,7 +107,7 @@ All queries go through **sqld Hrana3 HTTP API** (`POST /v3/pipeline`).
 
 ### Integration
 
-- **tmux**: `histdb-peco-tmux` — Opens peco in tmux popup
+- **tmux**: `histdb-skim-tmux` — Opens skim in tmux popup
 - **zsh-autosuggestions**: Use `histdb_advanced` strategy for context-aware suggestions
 - **ZLE widgets**: `histdb-top-widget` — Browse top commands interactively
 
@@ -135,7 +135,7 @@ source $HOME/.oh-my-zsh/custom/plugins/zsh-histdb/libsql-history.zsh
 autoload -Uz add-zsh-hook
 
 # Bind Ctrl+R for fuzzy history search
-bindkey '^R' histdb-peco
+bindkey '^R' histdb-skim
 ```
 
 ### Running sqld as a systemd User Service
@@ -203,7 +203,7 @@ Standard zsh options:
 source $ZSH/oh-my-zsh.sh
 source ${0:A:h}/libsql-history.zsh
 autoload -Uz add-zsh-hook
-bindkey '^R' histdb-peco
+bindkey '^R' histdb-skim
 # Optional: histdb-top widget
 zle -N histdb-top-widget
 bindkey '^[t' histdb-top-widget
@@ -214,7 +214,7 @@ bindkey '^[t' histdb-top-widget
 ```zsh
 source $PREZTO/runcoms/zshrc
 source ${0:A:h}/libsql-history.zsh
-bindkey '^R' histdb-peco
+bindkey '^R' histdb-skim
 ```
 
 **Basic zsh:**
@@ -222,7 +222,7 @@ bindkey '^R' histdb-peco
 ```zsh
 source ~/.local/share/zap/plugins/zsh-histdb/libsql-history.zsh
 autoload -Uz add-zsh-hook
-bindkey '^R' histdb-peco
+bindkey '^R' histdb-skim
 ```
 
 ## Querying History
@@ -293,28 +293,34 @@ _zsh_autosuggest_strategy_histdb_top() {
 ZSH_AUTOSUGGEST_STRATEGY=histdb_top
 ```
 
-## Fuzzy History Search with peco
+## Fuzzy History Search with skim
 
-`histdb-peco` — fuzzy finder over sqld history database. Replaces traditional reverse-isearch.
+`histdb-skim` — fuzzy finder over sqld history database using skim (fzf-compatible Rust fuzzy finder). Replaces traditional reverse-isearch.
 
 ### Setup
 
 ```zsh
-bindkey '^R' histdb-peco   # Ctrl+R for fuzzy search
+bindkey '^R' histdb-skim   # Ctrl+R for fuzzy search
 # or
-bindkey '^[r' histdb-peco  # Alt+R to keep default Ctrl+R
+bindkey '^[r' histdb-skim  # Alt+R to keep default Ctrl+R
 ```
 
 ### Usage
 
 - **Enter** — Insert command into buffer
+- **Ctrl-J** — Directory picker: switch to picking by directory
+- **Ctrl-R** — Insert command (alternative confirm)
+- **Ctrl-K** — Delete the selected command from history
 - **Ctrl-C** — Cancel
 
-Shows: command with host, directory, timestamp inline.
+### Preview
+
+When navigating, the bottom panel shows the command (syntax-highlighted with `bat` if available) along with directory, timestamp, count, and exit status.
 
 ### Requirements
 
-- `peco` installed and in PATH
+- `sk` (skim binary) installed and in PATH <https://github.com/lotabout/skim>
+- `bat` optional (syntax highlighting in preview)
 - Must be bound as a ZLE widget (not run directly)
 
 ## Up/Down Prefix Search
@@ -398,11 +404,11 @@ Or pass `-d` to `histdb` to print the SQL it's running.
 
 If you see `jq: error` spam after every command, sqld is unreachable. The plugin now handles this gracefully (errors suppressed), but history won't record. Fix the server.
 
-### histdb-peco not working
+### histdb-skim not working
 
-1. Check peco:
+1. Check skim:
    ```zsh
-   which peco
+   which sk
    ```
 
 2. Verify keybinding:
@@ -412,7 +418,7 @@ If you see `jq: error` spam after every command, sqld is unreachable. The plugin
 
 3. Test the widget:
    ```zsh
-   zle -l histdb-peco
+   zle -l histdb-skim
    ```
 
 ### Database issues

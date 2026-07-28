@@ -49,10 +49,10 @@ histdb-info() {
     else
         echo "  jq:      Not installed"
     fi
-    if which peco >/dev/null 2>&1; then
-        echo "  peco:    $(peco --version 2>&1)"
+    if which sk >/dev/null 2>&1; then
+        echo "  sk:      $(sk --version 2>&1)"
     else
-        echo "  peco:    Not installed (histdb-peco won't work)"
+        echo "  sk:      Not installed (histdb-skim won't work)"
     fi
     if which bat >/dev/null 2>&1; then
         echo "  bat:     $(bat --version 2>&1)"
