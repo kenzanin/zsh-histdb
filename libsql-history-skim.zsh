@@ -13,16 +13,16 @@ histdb-skim() {
     local sep=$'\t'
     local query="SELECT argv, last_host as host, last_dir as dir,
         strftime('%Y-%m-%d %H:%M', wtime, 'unixepoch', 'localtime') as time,
-        count, status
+        count, status as cmd_status
     FROM cmd
     $(_histdb_order_sort)
     LIMIT 2000"
 
     local output
     output=$(_histdb_query -separator "$sep" "$query" |
-        while IFS="$sep" read -r argv host dir time count status; do
+        while IFS="$sep" read -r argv host dir time count cmd_status; do
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-                "$argv" "$host" "$dir" "$time" "$count" "$status"
+                "$argv" "$host" "$dir" "$time" "$count" "$cmd_status"
         done |
         sk --no-sort --reverse --tiebreak=index --height 90% \
            --delimiter "$sep" --with-nth 1 \
@@ -45,9 +45,9 @@ histdb-skim() {
             # Directory picker: second skim showing directory field
             local dir_out
             dir_out=$(_histdb_query -separator "$sep" "$query" |
-                while IFS="$sep" read -r argv host dir time count status; do
+                while IFS="$sep" read -r argv host dir time count cmd_status; do
                     printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-                        "$argv" "$host" "$dir" "$time" "$count" "$status"
+                        "$argv" "$host" "$dir" "$time" "$count" "$cmd_status"
                 done |
                 sk --no-sort --reverse --tiebreak=index --height 90% \
                    --delimiter "$sep" --with-nth 3 \
