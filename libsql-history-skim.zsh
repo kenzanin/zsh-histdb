@@ -24,7 +24,7 @@ histdb-skim() {
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
                 "$argv" "$host" "$dir" "$time" "$count" "$cmd_status"
         done |
-        sk --no-sort --reverse --tiebreak=index --height 90% \
+        sk --exact --no-sort --reverse --tiebreak=index --height 90% \
            --delimiter "$sep" --with-nth 1 \
            --preview "echo -e 'Directory: {3}\nTime: {4}\nCount: {5}\nStatus: {6}' && echo \"{1}\" | bat --language bash --plain --color=always 2>/dev/null || true" \
            --preview-window down:6:wrap \
@@ -49,7 +49,7 @@ histdb-skim() {
                     printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
                         "$argv" "$host" "$dir" "$time" "$count" "$cmd_status"
                 done |
-                sk --no-sort --reverse --tiebreak=index --height 90% \
+                sk --exact --no-sort --reverse --tiebreak=index --height 90% \
                    --delimiter "$sep" --with-nth 3 \
                    --preview "echo -e 'Directory: {3}\nTime: {4}\nCount: {5}\nStatus: {6}' && echo \"{1}\" | bat --language bash --plain --color=always 2>/dev/null || true" \
                    --preview-window down:6:wrap \
@@ -91,7 +91,7 @@ histdb-top-widget() {
         while IFS="$sep" read -r argv count; do
             printf '%s\t%s\n' "$argv" "$count"
         done |
-        sk --no-sort --reverse --height 90% \
+        sk --exact --no-sort --reverse --height 90% \
            --delimiter "$sep" --with-nth 1 \
            --preview "echo 'Count: {2}' && echo \"{1}\" | bat --language bash --plain --color=always 2>/dev/null || true" \
            --preview-window down:4:wrap \
