@@ -8,7 +8,7 @@
 
 - **04/06/26**: Added `histdb-info` diagnostics, `histdb-dedup` dedup, sqlean extensions (regexp, stats, etc.), covering indexes on `start_time`, `--regex` search flag, Ctrl-K delete shortcut. Plugin now bundles 14 SQLite extensions in `extension/`.
 
-- **04/05/26**: Added fuzzy history search with `histdb-skim` function (requires skim). Supports Enter to select commands with preview window, directory picker (Ctrl-J), and multi-key bindings.
+- **04/05/26**: Added fuzzy history search with `histdb-skim` function. Supports Enter to select commands with preview window, directory picker (Ctrl-J), and multi-key bindings. **29/09/26**: switched from skim to fzf (skim swallows terminal typeahead, duplicating the initial query).
 
 ## What is this
 
@@ -107,7 +107,7 @@ All queries go through **sqld Hrana3 HTTP API** (`POST /v3/pipeline`).
 
 ### Integration
 
-- **tmux**: `histdb-skim-tmux` — Opens skim in tmux popup
+- **tmux**: `histdb-skim-tmux` — Opens fuzzy finder in tmux popup
 - **zsh-autosuggestions**: Use `histdb_advanced` strategy for context-aware suggestions
 - **ZLE widgets**: `histdb-top-widget` — Browse top commands interactively
 
@@ -293,9 +293,11 @@ _zsh_autosuggest_strategy_histdb_top() {
 ZSH_AUTOSUGGEST_STRATEGY=histdb_top
 ```
 
-## Fuzzy History Search with skim
+## Fuzzy History Search with fzf
 
-`histdb-skim` — fuzzy finder over sqld history database using skim (fzf-compatible Rust fuzzy finder). Replaces traditional reverse-isearch.
+`histdb-skim` — fuzzy finder over sqld history database using **fzf** (falls back to `sk`/skim if fzf is not installed). Replaces traditional reverse-isearch.
+
+> **Why fzf instead of skim?** Skim (>= 0.10) does not flush the terminal typeahead buffer on startup: keys typed just before the widget fires (e.g. `ssh` + Ctrl-R) get swallowed as extra query input, duplicating the query (`sshssh`). fzf flushes pending input on launch.
 
 ### Setup
 
@@ -319,7 +321,7 @@ When navigating, the bottom panel shows the command (syntax-highlighted with `ba
 
 ### Requirements
 
-- `sk` (skim binary) installed and in PATH <https://github.com/lotabout/skim>
+- `fzf` installed and in PATH <https://github.com/junegunn/fzf> (falls back to `sk` from <https://github.com/lotabout/skim>)
 - `bat` optional (syntax highlighting in preview)
 - Must be bound as a ZLE widget (not run directly)
 

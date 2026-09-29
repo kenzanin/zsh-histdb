@@ -1,13 +1,37 @@
-# skim-based ZLE widgets
+# fzf-based ZLE widgets
 #
 # Queries single `cmd` table — no JOINs, no GROUP BY.
-# Uses skim (fzf-compatible) for preview window, delimiter, and multi-key bindings.
+# Uses fzf for preview window, delimiter, and multi-key bindings.
+# Falls back to skim (sk) if fzf is not installed.
+#
+# Note: fzf is preferred over skim because skim (>= 0.10) does not flush
+# the terminal typeahead buffer on startup: keys typed just before the
+# widget fires (e.g. `ssh` + Ctrl-R) get swallowed as query input,
+# duplicating the query (`sshssh`).
+
+# Pick the TUI binary once per shell; FZF_SKIM_CMD overrides.
+typeset -g _HISTDB_TUI=""
+_histdb_tui() {
+    if [[ -n "$_HISTDB_TUI" ]]; then
+        print -r -- "$_HISTDB_TUI"
+        return
+    fi
+    if which fzf > /dev/null 2>&1; then
+        _HISTDB_TUI="fzf"
+    elif which sk > /dev/null 2>&1; then
+        _HISTDB_TUI="sk"
+    else
+        _HISTDB_TUI="none"
+    fi
+    print -r -- "${_HISTDB_TUI}"
+}
 
 histdb-skim() {
-    which sk > /dev/null 2>&1 || {
-        echo "sk (skim) not found"
+    local tui="$(_histdb_tui)"
+    if [[ "$tui" == "none" ]]; then
+        echo "fzf (or sk) not found"
         return 1
-    }
+    fi
     _histdb_init
 
     local sep=$'\t'
@@ -18,13 +42,20 @@ histdb-skim() {
     $(_histdb_order_sort)
     LIMIT 2000"
 
+    local tui_opts=()
+    if [[ "$tui" == "fzf" ]]; then
+        tui_opts=(--exact --no-sort --tiebreak=index --height=90% --reverse)
+    else
+        tui_opts=(--exact --no-sort --reverse --tiebreak=index --height 90%)
+    fi
+
     local output
     output=$(_histdb_query -separator "$sep" "$query" |
         while IFS="$sep" read -r argv host dir time count cmd_status; do
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
                 "$argv" "$host" "$dir" "$time" "$count" "$cmd_status"
         done |
-        sk --exact --no-sort --reverse --tiebreak=index --height 90% \
+        $tui "${tui_opts[@]}" \
            --delimiter "$sep" --with-nth 1 \
            --preview "echo -e 'Directory: {3}\nTime: {4}\nCount: {5}\nStatus: {6}' && echo \"{1}\" | bat --language bash --plain --color=always 2>/dev/null || true" \
            --preview-window down:6:wrap \
@@ -42,14 +73,14 @@ histdb-skim() {
 
     case "$key" in
         ctrl-j)
-            # Directory picker: second skim showing directory field
+            # Directory picker: second pass showing directory field
             local dir_out
             dir_out=$(_histdb_query -separator "$sep" "$query" |
                 while IFS="$sep" read -r argv host dir time count cmd_status; do
                     printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
                         "$argv" "$host" "$dir" "$time" "$count" "$cmd_status"
                 done |
-                sk --exact --no-sort --reverse --tiebreak=index --height 90% \
+                $tui "${tui_opts[@]}" \
                    --delimiter "$sep" --with-nth 3 \
                    --preview "echo -e 'Directory: {3}\nTime: {4}\nCount: {5}\nStatus: {6}' && echo \"{1}\" | bat --language bash --plain --color=always 2>/dev/null || true" \
                    --preview-window down:6:wrap \
@@ -58,7 +89,8 @@ histdb-skim() {
             local dir_key="${dir_out%%$'\n'*}"
             local dir_sel="${dir_out#*$'\n'}"
             if [[ -n "$dir_sel" ]]; then
-                LBUFFER="$(_histdb_skim_extract_cmd "$dir_sel" "$sep")"
+                BUFFER="$(_histdb_skim_extract_cmd "$dir_sel" "$sep")"
+                CURSOR=${#BUFFER}
             fi
             ;;
         ctrl-k)
@@ -69,7 +101,8 @@ histdb-skim() {
             ;;
         *)
             # Default (Enter, ctrl-r, etc.): insert the command
-            LBUFFER="$(_histdb_skim_extract_cmd "$selection" "$sep")"
+            BUFFER="$(_histdb_skim_extract_cmd "$selection" "$sep")"
+            CURSOR=${#BUFFER}
             ;;
     esac
     zle reset-prompt
@@ -78,27 +111,36 @@ histdb-skim() {
 zle -N histdb-skim
 
 histdb-top-widget() {
-    which sk > /dev/null 2>&1 || {
-        echo "sk (skim) not found"
+    local tui="$(_histdb_tui)"
+    if [[ "$tui" == "none" ]]; then
+        echo "fzf (or sk) not found"
         return 1
-    }
+    fi
     _histdb_init
     local sep=$'\t'
     local query="SELECT argv, count FROM cmd ORDER BY count DESC LIMIT 1000"
+
+    local tui_opts=()
+    if [[ "$tui" == "fzf" ]]; then
+        tui_opts=(--exact --no-sort --height=90% --reverse)
+    else
+        tui_opts=(--exact --no-sort --reverse --height 90%)
+    fi
 
     local selected
     selected=$(_histdb_query -separator "$sep" "$query" |
         while IFS="$sep" read -r argv count; do
             printf '%s\t%s\n' "$argv" "$count"
         done |
-        sk --exact --no-sort --reverse --height 90% \
+        $tui "${tui_opts[@]}" \
            --delimiter "$sep" --with-nth 1 \
            --preview "echo 'Count: {2}' && echo \"{1}\" | bat --language bash --plain --color=always 2>/dev/null || true" \
            --preview-window down:4:wrap \
            --query "$LBUFFER")
 
     if [[ -n "$selected" ]]; then
-        LBUFFER="$(_histdb_skim_extract_cmd "$selected" "$sep")"
+        BUFFER="$(_histdb_skim_extract_cmd "$selected" "$sep")"
+        CURSOR=${#BUFFER}
     fi
     zle reset-prompt
     return 0
