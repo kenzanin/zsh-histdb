@@ -251,7 +251,8 @@ _histdb-up-line-or-beginning-search() {
              LIMIT 2000"
     else
         sql="SELECT argv FROM cmd
-             WHERE argv LIKE '$(sql_escape "$prefix")%'
+             WHERE last_host = '$(sql_escape ${HOST})'
+             AND argv LIKE '$(sql_escape "$prefix")%'
              $(_histdb_order_sort)
              LIMIT 2000"
     fi
